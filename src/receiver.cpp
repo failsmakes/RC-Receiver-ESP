@@ -3,23 +3,21 @@
 //
 //  Veri kaynakları (öncelik sırası):
 //    1. ESP-NOW  ← Fiziksel transmitter
-//    2. WiFi UDP ← Android uygulaması (AP modu)
+//    2. WiFi UDP port 4210 ← Android uygulaması (AP modu)
 //
-//  Çıkışlar (paralel, her güncellenmede eş zamanlı):
+//  Çıkışlar (paralel):
 //    • RZ7886 motor sürücü (IN1/IN2 — PWM)
 //    • Servo (yön, trim dahil)
-//    • SBUS 16 kanal (100kbps inverted UART — SoftwareSerial)
-//        CH1 = Throttle  (-100…+100 → 172…1811)
-//        CH2 = Steer+Trim (servo ile aynı değer)
-//        CH3 = Trim (ham, ölçekli)
-//        CH4-CH16 = 992 (merkez, sabit)
+//    • SBUS 16 kanal (SoftwareSerial inverted)
 //
-//  Telemetri (ESP-NOW geri yolu):
-//    • ACK → Transmitter'a gönderilir
+//  Telemetri çıkışları:
+//    • ESP-NOW → Transmitter'a ACK
+//    • WiFi UDP port 4211 → Android'e JSON telemetri
+//        {"seq":<0-255>,"t":<-100..100>,"s":<-100..100>,"v":<voltaj_float>}
 //
-//  SBUS Donanım Notu:
-//    SBUS_INVERT_SW = true  → SoftwareSerial inverted, harici inverter YOK
-//    SBUS_INVERT_SW = false → GPIO normal, harici NPN/74HC04 gerekli
+//  Pil Voltajı:
+//    A0 pinine gerilim bölücü ile pil bağlanır.
+//    Bölücü: R1=30kΩ (pil+), R2=10kΩ (GND) → maks ~1.85V (7.4V LiPo için)
 // =============================================================================
 
 #include <Arduino.h>
@@ -41,7 +39,7 @@ struct __attribute__((packed)) RCPacket {
   uint8_t seq;
 };
 
-struct __attribute__((packed)) TelemetryPacket {
+struct __attribute__((packed)) TelemetryPacket {  // ESP-NOW ACK
   uint8_t ack_seq;
   uint8_t rssi;
 };
@@ -54,10 +52,22 @@ bool      prevFwd   = false;
 uint32_t  lastPktMs = 0;
 uint8_t   txMac[6]  = TX_MAC;
 
-WiFiUDP    udp;
-char       udpBuf[128];
+// UDP — komut alma (port 4210) + telemetri gönderme (port 4211)
+WiFiUDP   udpCmd;        // komut dinleme
+WiFiUDP   udpTelemetry;  // telemetri gönderme
+char      udpBuf[128];
+IPAddress androidIp;     // son komut gelen Android IP'si
+bool      androidKnown = false;
+
 Servo      steerServo;
 SbusOutput sbus(SBUS_TX_PIN, SBUS_INVERT_SW);
+
+// Voltaj
+float     vBat          = 0.0f;
+uint32_t  lastVbatMs    = 0;
+
+// Telemetri zamanlama
+uint32_t  lastTelemetryMs = 0;
 
 // -----------------------------------------------------------------------------
 //  MOTOR  (RZ7886)
@@ -121,32 +131,45 @@ void servoUpdate(int s, int trim) {
   int deg = map(s, -100, 100, SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
   deg = constrain(deg + trim, SERVO_MAX_LEFT - 10, SERVO_MAX_RIGHT + 10);
   steerServo.write(deg);
-  Serial.printf("Servo: %d\n", deg);
 }
 
 // -----------------------------------------------------------------------------
-//  SBUS KANALLARI GÜNCELLE
+//  SBUS
 // -----------------------------------------------------------------------------
 void sbusUpdate(const RCPacket& p) {
-  // CH1 — Throttle: ham gaz değeri
   sbus.channels[SBUS_CH_THROTTLE] = SbusOutput::rcToSbus(p.throttle);
 
-  // CH2 — Steer + Trim: servo ile birebir aynı değer
   int steerTrimmed = constrain((int)p.steer + (int)p.trim, -100, 100);
   sbus.channels[SBUS_CH_STEER] = SbusOutput::rcToSbus(steerTrimmed);
 
-  // CH3 — Trim ham: -20…+20 → SBUS aralığına map
   sbus.channels[SBUS_CH_TRIM_RAW] = (uint16_t)map(
-    constrain((int)p.trim, -20, 20),
-    -20, 20,
+    constrain((int)p.trim, -20, 20), -20, 20,
     SbusOutput::CH_MIN, SbusOutput::CH_MAX
   );
 
-  // CH4-CH16 — Merkez sabit
   for (uint8_t i = 3; i < 16; i++)
     sbus.channels[i] = SbusOutput::CH_MID;
 
   sbus.setFailsafe(false);
+}
+
+// -----------------------------------------------------------------------------
+//  PİL VOLTAJ OKUMA
+//  A0'daki ADC değerini gerilim bölücü oranıyla gerçek voltaja çevirir.
+//  Vbat = Vadc × (R1 + R2) / R2
+// -----------------------------------------------------------------------------
+void vbatUpdate() {
+  if (millis() - lastVbatMs < VBAT_INTERVAL_MS) return;
+  lastVbatMs = millis();
+
+  long sum = 0;
+  for (int i = 0; i < VBAT_SAMPLES; i++) {
+    sum += analogRead(A0);
+    delayMicroseconds(200);
+  }
+  float adcVal  = (float)sum / VBAT_SAMPLES;
+  float vAdc    = adcVal * (VBAT_ADC_REF / VBAT_ADC_MAX);
+  vBat          = vAdc * ((VBAT_R1 + VBAT_R2) / VBAT_R2);
 }
 
 // -----------------------------------------------------------------------------
@@ -166,44 +189,78 @@ void applyFailsafe() {
   motorFree();
   prevFwd = false;
   steerServo.write(SERVO_CENTER);
-
   for (auto& ch : sbus.channels) ch = SbusOutput::CH_MID;
-  sbus.channels[SBUS_CH_THROTTLE] = SbusOutput::CH_MID;
   sbus.setFailsafe(true);
+}
+
+// -----------------------------------------------------------------------------
+//  UDP TELEMETRİ → ANDROID
+//  Format: {"seq":N,"t":T,"s":S,"v":V}
+//    seq : son işlenen paket numarası
+//    t   : throttle -100..+100
+//    s   : steer -100..+100
+//    v   : pil voltajı (float, 2 ondalık)
+// -----------------------------------------------------------------------------
+void sendTelemetryUdp() {
+  if (!androidKnown) return;
+  if (millis() - lastTelemetryMs < TELEMETRY_INTERVAL_MS) return;
+  lastTelemetryMs = millis();
+
+  // Küçük JSON — StaticJsonDocument ile
+  char buf[80];
+  snprintf(buf, sizeof(buf),
+    "{\"seq\":%u,\"t\":%d,\"s\":%d,\"v\":%.2f}",
+    (unsigned)current.seq,
+    (int)current.throttle,
+    (int)current.steer,
+    vBat
+  );
+
+  udpTelemetry.beginPacket(androidIp, TELEMETRY_PORT);
+  udpTelemetry.write((uint8_t*)buf, strlen(buf));
+  udpTelemetry.endPacket();
+}
+
+// -----------------------------------------------------------------------------
+//  ESP-NOW ACK → Transmitter
+// -----------------------------------------------------------------------------
+void sendEspNowAck(uint8_t ack_seq) {
+  TelemetryPacket tp = {ack_seq, 0};
+  esp_now_send(txMac, (uint8_t*)&tp, sizeof(tp));
 }
 
 // -----------------------------------------------------------------------------
 //  ESP-NOW CALLBACK
 // -----------------------------------------------------------------------------
-void sendTelemetry(uint8_t ack_seq) {
-  TelemetryPacket tp = {ack_seq, 0};
-  esp_now_send(txMac, (uint8_t*)&tp, sizeof(tp));
-}
-
 void onDataRecv(uint8_t* mac, uint8_t* data, uint8_t len) {
   if (len != sizeof(RCPacket)) return;
   RCPacket p;
   memcpy(&p, data, sizeof(p));
   current = p;
   applyRC(current);
-  sendTelemetry(p.seq);
+  sendEspNowAck(p.seq);
 }
 
 // -----------------------------------------------------------------------------
-//  UDP JSON PARSE
+//  UDP KOMUT PARSE
+//  Android gönderimi: {"G":<throttle>,"Y":<steer>,"T":<trim>}
 // -----------------------------------------------------------------------------
-void parseUDP(const char* buf) {
+void parseUDP(const char* buf, IPAddress senderIp) {
+  // Android IP'yi öğren (telemetri için)
+  androidIp    = senderIp;
+  androidKnown = true;
+
   JsonDocument doc;
-  Serial.println(buf);
   if (deserializeJson(doc, buf)) return;
+
   RCPacket p;
-  p.throttle = constrain((int)(doc["G"]    | 0), -100, 100);
-  p.steer    = constrain((int)(doc["Y"]    | 0), -100, 100);
+  // RCProtocol.java gönderimi: {"G":throttle,"Y":steer,"T":trim}
+  p.throttle = constrain((int)(doc["G"] | 0), -100, 100);
+  p.steer    = constrain((int)(doc["Y"] | 0), -100, 100);
   p.trim     = constrain((int)(doc["T"] | 0), TRIM_MIN, TRIM_MAX);
   p.seq      = current.seq + 1;
   current    = p;
   applyRC(current);
-  Serial.printf("UDP Packet - Throttle: %d, Steer: %d, Trim: %d, Seq: %d\n", p.throttle, p.steer, p.trim, p.seq);
 }
 
 // -----------------------------------------------------------------------------
@@ -211,28 +268,29 @@ void parseUDP(const char* buf) {
 // -----------------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
-  Serial.println();
-  Serial.println("Merhaba");
+
   motorSetup();
   servoSetup();
 
   sbus.begin();
-
   Serial.printf("[SBUS] TX:%d  SW-Inverted:%s\n",
                 SBUS_TX_PIN, SBUS_INVERT_SW ? "EVET" : "HAYIR");
-  Serial.println("[SBUS] CH1=Throttle | CH2=Steer+Trim | CH3=TrimRaw | CH4-16=Merkez");
 
+  // WiFi AP
   WiFi.mode(WIFI_AP);
   WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD, WIFI_AP_CHANNEL);
   Serial.printf("[WiFi] AP: %s  IP: %s\n",
                 WIFI_AP_SSID, WiFi.softAPIP().toString().c_str());
 
-  udp.begin(UDP_PORT);
-  Serial.printf("[UDP] Port: %d\n", UDP_PORT);
+  udpCmd.begin(UDP_PORT);
+  udpTelemetry.begin(TELEMETRY_PORT + 100);  // gönderici local port (rastgele)
+  Serial.printf("[UDP] Komut port: %d  Telemetri hedef port: %d\n",
+                UDP_PORT, TELEMETRY_PORT);
 
+  // ESP-NOW
   if (esp_now_init() != 0) {
     Serial.println("[ESP-NOW] HATA — yeniden başlatılıyor");
-  //  ESP.restart();
+    ESP.restart();
   }
   esp_now_set_self_role(ESP_NOW_ROLE_COMBO);
   esp_now_register_recv_cb(onDataRecv);
@@ -246,13 +304,13 @@ void setup() {
 //  LOOP
 // -----------------------------------------------------------------------------
 void loop() {
-  // UDP
-  int len = udp.parsePacket();
+  // UDP komut
+  int len = udpCmd.parsePacket();
   if (len > 0 && len < (int)sizeof(udpBuf)) {
-    udp.read(udpBuf, len);
+    IPAddress senderIp = udpCmd.remoteIP();
+    udpCmd.read(udpBuf, len);
     udpBuf[len] = '\0';
-    //Serial.println(udpBuf);
-    parseUDP(udpBuf);
+    parseUDP(udpBuf, senderIp);
   }
 
   // Failsafe
@@ -260,9 +318,14 @@ void loop() {
     applyFailsafe();
   }
 
-  // SBUS frame — 20ms'de bir otomatik gönderir
+  // Voltaj oku
+  vbatUpdate();
+
+  // Telemetri gönder
+  sendTelemetryUdp();
+
+  // SBUS frame
   sbus.update();
 
-  // Call yield() to prevent ESP8266 watchdog resets during long loops
-  yield(); 
+  yield();
 }

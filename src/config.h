@@ -35,6 +35,27 @@
 // Bu kadar ms içinde paket gelmezse araç durur
 #define FAILSAFE_MS   500
 
+// --- PİL VOLTAJ ÖLÇÜMÜ -------------------------------------------------------
+//  ESP8266 NodeMCU v3: ADC0 (A0) 0-3.3V arası okur (0-1023).
+//  Pil voltajını gerilim bölücü ile A0'a bağlayın.
+//  Örnek: 7.4V LiPo → R1=30kΩ, R2=10kΩ → maks 1.85V (güvenli)
+//
+//  VBAT_R1, VBAT_R2: gerilim bölücü dirençleri (kΩ cinsinden)
+//  VBAT_SAMPLES    : ADC gürültüsünü azaltmak için ortalama örnek sayısı
+//  VBAT_INTERVAL_MS: voltaj okuma periyodu (ms)
+#define VBAT_R1              30.0f   // kΩ — üst direnç (pil + tarafa)
+#define VBAT_R2              10.0f   // kΩ — alt direnç (GND'e)
+#define VBAT_ADC_REF         3.3f    // V — ADC referans gerilimi
+#define VBAT_ADC_MAX         1023.0f // ADC çözünürlüğü
+#define VBAT_SAMPLES         8       // ortalama için örnek sayısı
+#define VBAT_INTERVAL_MS     500     // voltaj okuma sıklığı
+
+// --- TELEMETRİ UDP -----------------------------------------------------------
+//  Receiver → Android UDP telemetri paketi
+//  Hedef port: Android'in dinleyeceği port (komut portundan farklı)
+#define TELEMETRY_PORT       4211    // Android'in dinlediği port
+#define TELEMETRY_INTERVAL_MS 100   // telemetri gönderim sıklığı (ms)
+
 // --- SBUS ÇIKIŞI -------------------------------------------------------------
 //  TX pini: SoftwareSerial ile herhangi bir dijital pin kullanılabilir.
 //  D3 (GPIO0) varsayılan — programlama sırasında bu pini SBUS alıcısından ayırın!
