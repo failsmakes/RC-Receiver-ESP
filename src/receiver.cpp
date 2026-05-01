@@ -279,8 +279,8 @@ void setup() {
   // WiFi AP
   WiFi.mode(WIFI_AP);
   WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD, WIFI_AP_CHANNEL);
-  Serial.printf("[WiFi] AP: %s  IP: %s\n",
-                WIFI_AP_SSID, WiFi.softAPIP().toString().c_str());
+  Serial.printf("[WiFi] AP: %s  IP: %s  MAC\n",
+                WIFI_AP_SSID, WiFi.softAPIP().toString().c_str(), WiFi.softAPmacAddress().c_str());
 
   udpCmd.begin(UDP_PORT);
   udpTelemetry.begin(TELEMETRY_PORT + 100);  // gönderici local port (rastgele)
