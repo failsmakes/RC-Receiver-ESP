@@ -7,7 +7,7 @@
 //
 //  Çıkışlar (paralel):
 //    • RZ7886 motor sürücü (IN1/IN2 — PWM)
-//    • Servo (yön, trim dahil)
+//    • Servo (yön)
 //    • SBUS 16 kanal (SoftwareSerial inverted)
 //
 //  Telemetri çıkışları:
@@ -35,13 +35,15 @@
 struct __attribute__((packed)) RCPacket {
   int8_t  throttle;   // -100 … +100
   int8_t  steer;      // -100 … +100
-  int8_t  trim;       // -20  … +20
   uint8_t seq;
 };
 
 struct __attribute__((packed)) TelemetryPacket {  // ESP-NOW ACK
   uint8_t ack_seq;
-  uint8_t rssi;
+  int8_t  ack_throttle;   // -100 … +100
+  int8_t  ack_steer;      // -100 … +100
+  float   ack_vBat;      // pil voltajı
+  uint8_t ack_rssi;
 };
 
 // -----------------------------------------------------------------------------
@@ -126,10 +128,9 @@ void servoSetup() {
   steerServo.write(SERVO_CENTER);
 }
 
-void servoUpdate(int s, int trim) {
+void servoUpdate(int s) {
   if (abs(s) <= STEER_DEADBAND) s = 0;
   int deg = map(s, -100, 100, SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
-  deg = constrain(deg + trim, SERVO_MAX_LEFT - 10, SERVO_MAX_RIGHT + 10);
   steerServo.write(deg);
 }
 
@@ -139,15 +140,9 @@ void servoUpdate(int s, int trim) {
 void sbusUpdate(const RCPacket& p) {
   sbus.channels[SBUS_CH_THROTTLE] = SbusOutput::rcToSbus(p.throttle);
 
-  int steerTrimmed = constrain((int)p.steer + (int)p.trim, -100, 100);
-  sbus.channels[SBUS_CH_STEER] = SbusOutput::rcToSbus(steerTrimmed);
+  sbus.channels[SBUS_CH_STEER] = SbusOutput::rcToSbus(p.steer);
 
-  sbus.channels[SBUS_CH_TRIM_RAW] = (uint16_t)map(
-    constrain((int)p.trim, -20, 20), -20, 20,
-    SbusOutput::CH_MIN, SbusOutput::CH_MAX
-  );
-
-  for (uint8_t i = 3; i < 16; i++)
+  for (uint8_t i = 2; i < 16; i++)
     sbus.channels[i] = SbusOutput::CH_MID;
 
   sbus.setFailsafe(false);
@@ -177,7 +172,7 @@ void vbatUpdate() {
 // -----------------------------------------------------------------------------
 void applyRC(const RCPacket& p) {
   motorDrive(p.throttle);
-  servoUpdate(p.steer, p.trim);
+  servoUpdate(p.steer);
   sbusUpdate(p);
   lastPktMs = millis();
 }
@@ -224,8 +219,8 @@ void sendTelemetryUdp() {
 // -----------------------------------------------------------------------------
 //  ESP-NOW ACK → Transmitter
 // -----------------------------------------------------------------------------
-void sendEspNowAck(uint8_t ack_seq) {
-  TelemetryPacket tp = {ack_seq, 0};
+void sendEspNowAck(uint8_t ack_seq, int8_t ack_throttle, int8_t ack_steer, float ack_vBat) {
+  TelemetryPacket tp = {ack_seq,ack_throttle, ack_steer, ack_vBat, 0};
   esp_now_send(txMac, (uint8_t*)&tp, sizeof(tp));
 }
 
@@ -238,12 +233,12 @@ void onDataRecv(uint8_t* mac, uint8_t* data, uint8_t len) {
   memcpy(&p, data, sizeof(p));
   current = p;
   applyRC(current);
-  sendEspNowAck(p.seq);
+  sendEspNowAck(p.seq, p.throttle, p.steer, vBat);
 }
 
 // -----------------------------------------------------------------------------
 //  UDP KOMUT PARSE
-//  Android gönderimi: {"G":<throttle>,"Y":<steer>,"T":<trim>}
+//  Android gönderimi: {"G":<throttle>,"Y":<steer>}
 // -----------------------------------------------------------------------------
 void parseUDP(const char* buf, IPAddress senderIp) {
   // Android IP'yi öğren (telemetri için)
@@ -254,10 +249,9 @@ void parseUDP(const char* buf, IPAddress senderIp) {
   if (deserializeJson(doc, buf)) return;
 
   RCPacket p;
-  // RCProtocol.java gönderimi: {"G":throttle,"Y":steer,"T":trim}
+  // RCProtocol.java gönderimi: {"G":throttle,"Y":steer}
   p.throttle = constrain((int)(doc["G"] | 0), -100, 100);
   p.steer    = constrain((int)(doc["Y"] | 0), -100, 100);
-  p.trim     = constrain((int)(doc["T"] | 0), TRIM_MIN, TRIM_MAX);
   p.seq      = current.seq + 1;
   current    = p;
   applyRC(current);
@@ -273,14 +267,16 @@ void setup() {
   servoSetup();
 
   sbus.begin();
+  Serial.println();
+  Serial.println("-------------------------------");
   Serial.printf("[SBUS] TX:%d  SW-Inverted:%s\n",
                 SBUS_TX_PIN, SBUS_INVERT_SW ? "EVET" : "HAYIR");
 
   // WiFi AP
   WiFi.mode(WIFI_AP);
   WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD, WIFI_AP_CHANNEL);
-  Serial.printf("[WiFi] AP: %s  IP: %s  MAC\n",
-                WIFI_AP_SSID, WiFi.softAPIP().toString().c_str(), WiFi.softAPmacAddress().c_str());
+  Serial.printf("[WiFi] AP: %s  IP: %s  AP MAC: %s  MAC: %s\n",
+                WIFI_AP_SSID, WiFi.softAPIP().toString().c_str(), WiFi.softAPmacAddress().c_str(), WiFi.macAddress().c_str());
 
   udpCmd.begin(UDP_PORT);
   udpTelemetry.begin(TELEMETRY_PORT + 100);  // gönderici local port (rastgele)
