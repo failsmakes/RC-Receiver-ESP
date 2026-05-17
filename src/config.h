@@ -38,14 +38,55 @@
 // --- PİL VOLTAJ ÖLÇÜMÜ -------------------------------------------------------
 //  ESP8266 NodeMCU v3: ADC0 (A0) 0-3.3V arası okur (0-1023).
 //  Pil voltajını gerilim bölücü ile A0'a bağlayın.
-//  Örnek: 7.4V LiPo → R1=30kΩ, R2=10kΩ → maks 1.85V (güvenli)
 //
-#define VBAT_R1              30.0f   // kΩ — üst direnç (pil + tarafa)
+//  Gerilim bölücü hesabı:
+//    Vout = Vbat × R2 / (R1 + R2)   →   Vout < 3.3V olmalı!
+//
+//  2S LiPo maks: 8.4V  →  R1=30kΩ R2=10kΩ → Vout_max = 8.4×10/40 = 2.1V  ✓
+//  3S LiPo maks: 12.6V →  R1=47kΩ R2=10kΩ → Vout_max = 12.6×10/57 = 2.2V ✓
+//
+//  2S ve 3S için aynı bölücü kullanmak istiyorsanız:
+//    R1=47kΩ, R2=10kΩ  →  hem 2S hem 3S güvenle ölçülür.
+//
+#define VBAT_R1              47.0f   // kΩ — üst direnç (pil + tarafa)
 #define VBAT_R2              10.0f   // kΩ — alt direnç (GND'e)
 #define VBAT_ADC_REF         3.3f    // V — ADC referans gerilimi
 #define VBAT_ADC_MAX         1023.0f // ADC çözünürlüğü
-#define VBAT_SAMPLES         8       // ortalama için örnek sayısı
+#define VBAT_SAMPLES         16      // açılış kalibrasyonu için daha fazla örnek
 #define VBAT_INTERVAL_MS     500     // voltaj okuma sıklığı
+
+// --- PİL HÜCRE TESPİTİ (LiPo) -----------------------------------------------
+//
+//  Açılışta ölçülen toplam voltaja göre hücre sayısı belirlenir.
+//  Dolu LiPo hücresi: 3.7V nominal, 4.2V tam dolu, ~3.0V kritik boş.
+//
+//  Algılama eşikleri (toplam voltaj):
+//    < CELL_DETECT_2S_MAX  → 2S  (6.0V – 8.4V arası beklenir)
+//    >= CELL_DETECT_2S_MAX → 3S  (9.0V – 12.6V arası beklenir)
+//
+//  Pil takılı değilse veya voltaj çok düşükse → 0 hücre (motor kilitli)
+//
+#define CELL_DETECT_MIN_V    4.5f    // V — bu voltajın altı = pil yok / bağlı değil
+#define CELL_DETECT_2S_MAX   8.9f    // V — altında 2S, üstünde 3S kabul edilir
+
+//  Hücre başına minimum çalışma voltajı.
+//  Bu değerin ALTINA düşerse motor engellenir (LiPo koruma).
+//  Önerilen: 3.4V (erken uyarı), 3.2V (kesin kesme)
+#define CELL_MIN_VOLTAGE     3.4f    // V/hücre — motor engelleme eşiği
+
+//  Voltaj bu değerin üzerine çıkmadan kilit açılmaz (histerezis — titreşim önleme)
+#define CELL_RECOVER_VOLTAGE 3.5f    // V/hücre — kilit açma eşiği
+
+// --- MOTOR BEEP (Açılış Ses Sinyali) -----------------------------------------
+//  Açılışta hücre sayısı kadar kısa motor titreşim darbesi üretilir.
+//  Örnek: 2S → "bip-bip", 3S → "bip-bip-bip"
+//  Motor IN1'e kısa PWM darbeleri gönderilir (IN2=0), rotor titreşir.
+//
+#define BEEP_PWM_VALUE       80      // 0–255 — titreşim gücü (düşük = nazik)
+#define BEEP_ON_MS           80      // ms — tek darbenin açık süresi
+#define BEEP_OFF_MS         200      // ms — iki darbe arasındaki sessizlik
+#define BEEP_CELL_PAUSE_MS  700      // ms — hücre grubu tekrarı arasındaki bekleme
+#define BEEP_REPEAT_COUNT    2       // hücre sayısı sinyali kaç kez tekrarlansın
 
 // --- TELEMETRİ UDP -----------------------------------------------------------
 #define TELEMETRY_PORT       4211    // Android'in dinlediği port
