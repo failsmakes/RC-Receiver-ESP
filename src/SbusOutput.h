@@ -41,7 +41,14 @@
 // =============================================================================
 
 #include <Arduino.h>
-#include <SoftwareSerial.h>
+
+#if BOARD_TYPE == BOARD_ESP8266
+  #include <SoftwareSerial.h>
+#else
+  // ESP32: use Serial1 (HardwareSerial). SBUS requires inverted signal —
+  // hardware inversion support may vary per board.
+  // We use Serial1 with SERIAL_8E2 config; hardware inversion is not handled here.
+#endif
 
 class SbusOutput {
 public:
@@ -60,14 +67,23 @@ public:
   // txPin    : SoftwareSerial TX pini (RX kullanılmaz, -1 ver)
   // swInvert : true = sinyal inverted (SBUS doğru lojik), false = normal
   explicit SbusOutput(int txPin, bool swInvert = true)
+#if BOARD_TYPE == BOARD_ESP8266
       : _ss(/*rx=*/-1, /*tx=*/txPin, /*inverse_logic=*/swInvert)
+#endif
   {
     for (auto& ch : channels) ch = CH_MID;
+    _txPin = txPin;
+    _swInvert = swInvert;
   }
 
   // ---- begin — setup() içinde çağırın ----------------------------------------
   void begin() {
+#if BOARD_TYPE == BOARD_ESP8266
     _ss.begin(BAUD);
+#else
+    // ESP32: use Serial1. Configure TX pin and 8E2 frame.
+    Serial1.begin(BAUD, SERIAL_8E2, -1, _txPin);
+#endif
     _lastMs = 0;
   }
 
@@ -89,9 +105,15 @@ public:
   void setFailsafe(bool fs) { _failsafe = fs; }
 
 private:
+#if BOARD_TYPE == BOARD_ESP8266
   SoftwareSerial _ss;
+#else
+  // No SoftwareSerial on ESP32 — use Serial1
+#endif
   uint32_t       _lastMs   = 0;
   bool           _failsafe = false;
+  int            _txPin    = -1;
+  bool           _swInvert = true;
 
   static constexpr uint8_t HEADER      = 0x0F;
   static constexpr uint8_t FOOTER      = 0x00;
@@ -101,7 +123,11 @@ private:
   void _sendFrame() {
     uint8_t frame[FRAME_BYTES] = {};
     _buildFrame(frame);
+#if BOARD_TYPE == BOARD_ESP8266
     _ss.write(frame, FRAME_BYTES);
+#else
+    Serial1.write(frame, FRAME_BYTES);
+#endif
   }
 
   // ---- 16 × 11 bit → 22 byte packing -----------------------------------------
