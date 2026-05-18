@@ -22,14 +22,13 @@
 //  Receiver hangi transmitterdan komut alacak?
 //
 //  INPUT_ESPNOW   → Fiziksel ESP8266/ESP32 transmitter (RC kumandalı)
+//                   Android UDP da paralel kaynak olarak çalışır.
 //  INPUT_ANDROID  → Sadece WiFi UDP / Android uygulama (ESP-NOW devre dışı)
-//  INPUT_PS3      → PS3 DualShock (sadece ESP32, Bluetooth)
-//  INPUT_PS4      → PS4 DualShock (sadece ESP32, Bluetooth)
+//  INPUT_PS3      → PS3 DualShock Bluetooth (sadece ESP32)
+//                   Kütüphane: https://github.com/jvpernis/esp32-ps3
+//  INPUT_PS4      → PS4 DualShock Bluetooth (sadece ESP32)
+//                   Kütüphane: https://github.com/pablomarquez76/PS4_Controller_Host
 //
-//  NOT: INPUT_ESPNOW seçildiğinde Android UDP da ek kaynak olarak çalışmaya
-//       devam eder (öncelik ESP-NOW'dadır).
-//  NOT: INPUT_PS3 / INPUT_PS4 seçildiğinde ESP-NOW ve Android UDP devre dışı
-//       kalır. Sadece Bluetooth kontrolcü kullanılır.
 //  NOT: INPUT_PS3 ve INPUT_PS4 yalnızca BOARD_ESP32 ile kullanılabilir.
 //
 #define INPUT_ESPNOW    1
@@ -37,7 +36,7 @@
 #define INPUT_PS3       3
 #define INPUT_PS4       4
 
-#define RX_INPUT_SOURCE INPUT_ANDROID    // ← buradan değiştir
+#define RX_INPUT_SOURCE INPUT_ESPNOW    // ← buradan değiştir
 
 // Derleme zamanı kontrol
 #if (RX_INPUT_SOURCE == INPUT_PS3 || RX_INPUT_SOURCE == INPUT_PS4) && (BOARD_TYPE == BOARD_ESP8266)
@@ -165,27 +164,43 @@
 #define GYRO_OUTPUT_SCALE    800.0f
 
 // =============================================================================
-//  11. PS3 / PS4 KONTROLCÜ AYARLARI  (sadece INPUT_PS3 / INPUT_PS4)
+//  11. PS3 / PS4 KONTROLCÜ AYARLARI
 // =============================================================================
-//  Bluepad32 kütüphanesi kullanılır.
-//  Kütüphane: https://github.com/ricardoquesada/bluepad32
 //
-//  Thumbstick eksen eşlemeleri (0-255, merkez ~127):
-//    Sol stick Y ekseni → Gaz (ileri/geri)
-//    Sağ stick X ekseni → Yön (sol/sağ)
+//  PS3: github.com/jvpernis/esp32-ps3
+//    • Ps3.begin("XX:XX:XX:XX:XX:XX") ile başlatılır.
+//    • Stickler int8_t (-128..+127), L2/R2 uint8_t (0..255)
+//    • Bağlantı: Kontrolcüde PS tuşuna basın.
 //
-//  Sol stick Y: 0=tam ileri, 255=tam geri → ters çevrilmesi gerekebilir
+//  PS4: github.com/pablomarquez76/PS4_Controller_Host
+//    • PS4.begin() veya PS4.begin("XX:XX:XX:XX:XX:XX") ile başlatılır.
+//    • Stickler int8_t (-128..+127, Y ekseni zaten çevrilmiş), L2/R2 uint8_t (0..255)
+//    • Bağlantı: Kontrolcüde Share + PS tuşuna aynı anda basın.
 //
-//  Thumbstick deadband (ham ADC 0-255):
-#define PS_STICK_DEADBAND    15     // merkez etrafı ±15 sayım serbest bölge
+//  PS_BT_MAC: ESP32'nin Bluetooth MAC adresi.
+//    "" (boş string) bırakırsanız varsayılan MAC kullanılır.
+//    PS3 kütüphanesi belirli bir MAC bekler — eşleştirme için gereklidir.
+//    esp32-ps3 README'sindeki "Ps3Address" örneğini çalıştırıp MAC'i öğrenin.
 //
-//  Düğme eşlemeleri (config — isteğe göre değiştirin):
-//  Gyro gain: L1/R1 ile ±5 değiştir (tek basışta)
-//    L1 → gain azalt, R1 → gain artır
-//  Gyro direction: L3 butonu (sol stick bas) → toggle
-//  Trim sol: L2 analog → steer trim sola
-//  Trim sağ: R2 analog → steer trim sağa
-//  Trim sıfırla: Cross (PS3) veya Cross (PS4) basılı tut 1s
-//
-#define PS_GYRO_GAIN_STEP    5      // L1/R1 başına gain değişimi
-#define PS_TRIM_SCALE        30     // L2/R2 analog → trim ölçek (0-255 → 0-30)
+#define PS_BT_MAC   ""   // örn: "01:02:03:04:05:06" — boş = varsayılan MAC
+
+//  Thumbstick deadband: int8_t değer aralığında (-128..+127)
+//  Merkez etrafı bu değer kadar serbest bölge
+#define PS_STICK_DEADBAND    10
+
+//  Gyro gain adımı: L1 azaltır, R1 artırır (her basışta)
+#define PS_GYRO_GAIN_STEP    5
+
+//  Trim ölçeği: L2/R2 analog (0..255) → trim değeri (0..PS_TRIM_SCALE)
+//  Net trim = R2-L2 farkından hesaplanır
+#define PS_TRIM_SCALE        30
+
+//  Düğme eşlemeleri (her iki kontrolcüde aynı mantık):
+//    Sol stick Y  → Gaz (ileri/geri)
+//    Sağ stick X  → Yön (sol/sağ)
+//    L2 analog    → Trim sola
+//    R2 analog    → Trim sağa
+//    L1           → Gyro gain -5 (kenar tetikli)
+//    R1           → Gyro gain +5 (kenar tetikli)
+//    L3 (sol bas) → Gyro direction toggle (kenar tetikli)
+//    Cross (×)    → 1s basılı tut → Trim sıfırla

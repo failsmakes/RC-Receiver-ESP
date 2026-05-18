@@ -7,6 +7,9 @@
 //    BOARD_TYPE       → BOARD_ESP8266 / BOARD_ESP32
 //    RX_INPUT_SOURCE  → INPUT_ESPNOW / INPUT_ANDROID / INPUT_PS3 / INPUT_PS4
 //
+//  PS3 kütüphanesi : github.com/jvpernis/esp32-ps3
+//  PS4 kütüphanesi : github.com/pablomarquez76/PS4_Controller_Host
+//
 //  Çıkışlar:
 //    • RZ7886 motor sürücü (PWM)
 //    • Servo (yön)
@@ -17,27 +20,72 @@
 //    • Düşük voltaj → motor kilidi
 // =============================================================================
 
-#include <Arduino.h>
-#include <Servo.h>
-#include <ArduinoJson.h>
 #include "config.h"
+#include <Arduino.h>
+#if BOARD_TYPE == BOARD_ESP8266
+  #include <Servo.h>
+#elif BOARD_TYPE == BOARD_ESP32
+  #include <ESP32Servo.h>
+#endif
+#include <ArduinoJson.h>
 #include "platform.h"
 #include "SbusOutput.h"
 #include "GyroProcessor.h"
 
-// ─── PS3/PS4: Bluepad32 (sadece ESP32) ───────────────────────────────────────
-#if RX_INPUT_SOURCE == INPUT_PS3 || RX_INPUT_SOURCE == INPUT_PS4
-  #include <Bluepad32.h>
-  static GamepadPtr bp32Gamepad = nullptr;
+// =============================================================================
+//  PS3 — esp32-ps3 kütüphanesi (sadece ESP32)
+//
+//  API özeti:
+//    Ps3.begin("MAC")          → başlat (MAC: ESP32'nin BT adresi)
+//    Ps3.isConnected()         → bool
+//    Ps3.attachOnConnect(cb)   → bağlantı callback
+//    Ps3.attachOnDisconnect(cb)→ kesinti callback
+//    Ps3.data.analog.stick.lx  → int8_t (-128..+127) sol stick X
+//    Ps3.data.analog.stick.ly  → int8_t (-128..+127) sol stick Y (aşağı = pozitif)
+//    Ps3.data.analog.stick.rx  → int8_t sağ stick X
+//    Ps3.data.analog.stick.ry  → int8_t sağ stick Y
+//    Ps3.data.analog.button.l2 → uint8_t (0..255)
+//    Ps3.data.analog.button.r2 → uint8_t (0..255)
+//    Ps3.data.button.l1        → uint8_t (0 veya 1)
+//    Ps3.data.button.r1        → uint8_t (0 veya 1)
+//    Ps3.data.button.l3        → uint8_t (sol stick bas)
+//    Ps3.data.button.cross     → uint8_t
+// =============================================================================
+#if RX_INPUT_SOURCE == INPUT_PS3
+  #include <Ps3Controller.h>
 
-  void onConnectedGamepad(GamepadPtr gp) {
-    bp32Gamepad = gp;
-    Serial.println("[BT] Kontrolcü baglandi!");
-  }
-  void onDisconnectedGamepad(GamepadPtr gp) {
-    bp32Gamepad = nullptr;
-    Serial.println("[BT] Kontrolcü baglantisi kesildi.");
-  }
+  static bool ps3Connected = false;
+  void onPs3Connect()    { ps3Connected = true;  Serial.println("[PS3] Baglandi!"); }
+  void onPs3Disconnect() { ps3Connected = false; Serial.println("[PS3] Baglanti kesildi."); }
+#endif
+
+// =============================================================================
+//  PS4 — PS4_Controller_Host kütüphanesi (sadece ESP32)
+//
+//  API özeti:
+//    PS4.begin()               → başlat (varsayılan MAC)
+//    PS4.begin("MAC")          → başlat (belirli MAC)
+//    PS4.isConnected()         → bool
+//    PS4.attachOnConnect(cb)   → bağlantı callback
+//    PS4.attachOnDisconnect(cb)→ kesinti callback
+//    PS4.LStickX()             → int8_t sol stick X
+//    PS4.LStickY()             → int8_t sol stick Y (zaten çevrilmiş: yukarı = pozitif)
+//    PS4.RStickX()             → int8_t sağ stick X
+//    PS4.RStickY()             → int8_t sağ stick Y
+//    PS4.L2Value()             → uint8_t (0..255)
+//    PS4.R2Value()             → uint8_t (0..255)
+//    PS4.L1()                  → bool
+//    PS4.R1()                  → bool
+//    PS4.L3()                  → bool (sol stick bas)
+//    PS4.Cross()               → bool
+//    PS4.setLed(r,g,b)         → LED rengi ayarla
+// =============================================================================
+#if RX_INPUT_SOURCE == INPUT_PS4
+  #include <PS4Controller.h>
+
+  static bool ps4Connected = false;
+  void onPs4Connect()    { ps4Connected = true;  PS4.setLed(0, 255, 0); Serial.println("[PS4] Baglandi!"); }
+  void onPs4Disconnect() { ps4Connected = false; Serial.println("[PS4] Baglanti kesildi."); }
 #endif
 
 // =============================================================================
@@ -103,7 +151,6 @@ private:
 
   void _playStartupBeep(uint8_t n) {
     Serial.printf("[BEEP] %dS → %dx%d darbe\n", n, BEEP_REPEAT_COUNT, n);
-    // Pinleri doğrudan hazırla (motorSetup öncesi çağrılabilir)
     pinMode(MOTOR_IN1_PIN, OUTPUT);
     pinMode(MOTOR_IN2_PIN, OUTPUT);
     platformPwmSetup();
@@ -173,16 +220,17 @@ uint32_t  lastPktMs = 0;
 Servo      steerServo;
 SbusOutput sbus(SBUS_TX_PIN, SBUS_INVERT_SW);
 
-// PS3/PS4 için trim ve gyro ayar durumu
+// PS3/PS4 ortak durum değişkenleri
 #if RX_INPUT_SOURCE == INPUT_PS3 || RX_INPUT_SOURCE == INPUT_PS4
-  int  psTrip       = 0;
-  int  psGyroGain   = GYRO_GAIN_DEFAULT;
-  int  psGyroDir    = GYRO_DIRECTION_DEFAULT;
-  bool psL1Prev     = false;
-  bool psR1Prev     = false;
-  bool psL3Prev     = false;
-  bool psCrossPrev  = false;
-  uint32_t psCrossHoldMs = 0;
+  static int  psTrim       = 0;
+  static int  psGyroGain   = GYRO_GAIN_DEFAULT;
+  static int  psGyroDir    = GYRO_DIRECTION_DEFAULT;
+  // Kenar tetikleme için önceki buton durumları
+  static bool psL1Prev     = false;
+  static bool psR1Prev     = false;
+  static bool psL3Prev     = false;
+  static bool psCrossPrev  = false;
+  static uint32_t psCrossHoldMs = 0;
 #endif
 
 // =============================================================================
@@ -291,10 +339,9 @@ void sendTelemetryUdp() {
 #endif
 
 // =============================================================================
-//  ESP-NOW CALLBACK
+//  ESP-NOW
 // =============================================================================
 #if RX_INPUT_SOURCE == INPUT_ESPNOW
-
 void sendEspNowAck(const RCPacket& p) {
   TelemetryPacket tp = {};
   tp.ack_seq        = p.seq;
@@ -308,7 +355,6 @@ void sendEspNowAck(const RCPacket& p) {
   platformEspNowSend(txMac, (const uint8_t*)&tp, sizeof(tp));
 }
 
-// ESP8266 ve ESP32'nin callback imzaları farklı — her ikisini derle
 #if BOARD_TYPE == BOARD_ESP8266
 void onDataRecv(uint8_t* mac, uint8_t* data, uint8_t len) {
 #elif BOARD_TYPE == BOARD_ESP32
@@ -319,11 +365,10 @@ void onDataRecv(const uint8_t* mac, const uint8_t* data, int len) {
   applyRC(current);
   sendEspNowAck(current);
 }
-
-#endif // INPUT_ESPNOW
+#endif  // INPUT_ESPNOW
 
 // =============================================================================
-//  UDP KOMUT PARSE  (Android ve ESPNOW modu)
+//  UDP KOMUT PARSE
 // =============================================================================
 #if RX_INPUT_SOURCE == INPUT_ESPNOW || RX_INPUT_SOURCE == INPUT_ANDROID
 void parseUDP(const char* buf, IPAddress senderIp) {
@@ -343,60 +388,122 @@ void parseUDP(const char* buf, IPAddress senderIp) {
 #endif
 
 // =============================================================================
-//  PS3 / PS4 KONTROLCÜ İŞLEME  (Bluepad32)
+//  PS3 KONTROLCÜ İŞLEME — esp32-ps3
+//
+//  Stick değerleri int8_t (-128..+127) → -100..+100 ölçeklenir
+//  LY: yukarı = negatif değer → throttle için ters çevir
+//  RX: sağa = pozitif değer → steer olarak direkt kullan
 // =============================================================================
-#if RX_INPUT_SOURCE == INPUT_PS3 || RX_INPUT_SOURCE == INPUT_PS4
-void processGamepad() {
-  if (!bp32Gamepad || !bp32Gamepad->isConnected()) return;
+#if RX_INPUT_SOURCE == INPUT_PS3
+void processPs3() {
+  if (!ps3Connected || !Ps3.isConnected()) return;
 
-  // ── Analog stickler ──────────────────────────────────────────────────────
-  // Sol stick Y → Throttle. Bluepad32: -512..+512 (merkez=0)
-  // İleri = negatif Y → throttle pozitif
-  int rawThrottle = -bp32Gamepad->axisY();   // sol stick Y, ters çevir = ileri pozitif
-  int rawSteer    =  bp32Gamepad->axisRX();  // sağ stick X
-
-  // -512..+512 → -100..+100
-  int t = constrain(rawThrottle * 100 / 512, -100, 100);
-  int s = constrain(rawSteer    * 100 / 512, -100, 100);
-
-  // Stick deadband
-  if (abs(t) < PS_STICK_DEADBAND * 100 / 512) t = 0;
-  if (abs(s) < PS_STICK_DEADBAND * 100 / 512) s = 0;
+  // ── Stickler → -100..+100 ────────────────────────────────────────────────
+  // ly: yukarı = negatif → ters çevir
+  int t = constrain((int)Ps3.data.analog.stick.ly * -100 / 127, -100, 100);
+  int s = constrain((int)Ps3.data.analog.stick.rx *  100 / 127, -100, 100);
+  if (abs(t) < PS_STICK_DEADBAND) t = 0;
+  if (abs(s) < PS_STICK_DEADBAND) s = 0;
 
   // ── L2/R2 → Trim ─────────────────────────────────────────────────────────
-  // Bluepad32: brake() = L2 (0-1023), throttle() = R2 (0-1023)
-  int l2 = bp32Gamepad->brake();    // 0-1023
-  int r2 = bp32Gamepad->throttle(); // 0-1023
-  psTrip = map(r2 - l2, -1023, 1023, -PS_TRIM_SCALE, PS_TRIM_SCALE);
-  psTrip = constrain(psTrip, -PS_TRIM_SCALE, PS_TRIM_SCALE);
+  // l2/r2 uint8_t (0..255) — fark → trim
+  int l2 = Ps3.data.analog.button.l2;
+  int r2 = Ps3.data.analog.button.r2;
+  psTrim = map(r2 - l2, -255, 255, -PS_TRIM_SCALE, PS_TRIM_SCALE);
+  psTrim = constrain(psTrim, -PS_TRIM_SCALE, PS_TRIM_SCALE);
 
-  // ── L1/R1 → Gyro Gain ±5 (kenar tetikli) ─────────────────────────────────
-  bool l1 = bp32Gamepad->l1();
-  bool r1 = bp32Gamepad->r1();
-  if (l1 && !psL1Prev) { psGyroGain = constrain(psGyroGain - PS_GYRO_GAIN_STEP, 0, 100); }
-  if (r1 && !psR1Prev) { psGyroGain = constrain(psGyroGain + PS_GYRO_GAIN_STEP, 0, 100); }
-  psL1Prev = l1; psR1Prev = r1;
+  // ── L1/R1 → Gyro Gain (kenar tetikli) ────────────────────────────────────
+  bool l1 = Ps3.data.button.l1;
+  bool r1 = Ps3.data.button.r1;
+  if (l1 && !psL1Prev) psGyroGain = constrain(psGyroGain - PS_GYRO_GAIN_STEP, 0, 100);
+  if (r1 && !psR1Prev) psGyroGain = constrain(psGyroGain + PS_GYRO_GAIN_STEP, 0, 100);
+  psL1Prev = l1;
+  psR1Prev = r1;
 
   // ── L3 (sol stick bas) → Gyro Direction toggle ───────────────────────────
-  bool l3 = bp32Gamepad->thumbL();
-  if (l3 && !psL3Prev) { psGyroDir = -psGyroDir; Serial.printf("[PS] Gyro dir: %+d\n", psGyroDir); }
+  bool l3 = Ps3.data.button.l3;
+  if (l3 && !psL3Prev) {
+    psGyroDir = -psGyroDir;
+    Serial.printf("[PS3] Gyro dir: %+d\n", psGyroDir);
+  }
   psL3Prev = l3;
 
-  // ── Cross (×) basılı tut 1s → Trim sıfırla ──────────────────────────────
-  bool cross = bp32Gamepad->a();  // Bluepad32: a() = Cross/A
+  // ── Cross basılı tut 1s → Trim sıfırla ───────────────────────────────────
+  bool cross = Ps3.data.button.cross;
   if (cross && !psCrossPrev) psCrossHoldMs = millis();
-  if (cross && (millis() - psCrossHoldMs > 1000)) { psTrip = 0; }
+  if (cross && (millis() - psCrossHoldMs > 1000)) { psTrim = 0; }
   psCrossPrev = cross;
 
-  // ── RCPacket oluştur ve uygula ────────────────────────────────────────────
+  // ── RCPacket oluştur ──────────────────────────────────────────────────────
   current.throttle = (int8_t)t;
-  current.steer    = (int8_t)constrain(s + psTrip, -100, 100);
+  current.steer    = (int8_t)constrain(s + psTrim, -100, 100);
   current.seq++;
   current.gyroGain = (int8_t)psGyroGain;
   current.gyroDir  = (int8_t)psGyroDir;
   applyRC(current);
 }
-#endif
+#endif  // INPUT_PS3
+
+// =============================================================================
+//  PS4 KONTROLCÜ İŞLEME — PS4_Controller_Host
+//
+//  LStickY() zaten çevrilmiş: yukarı = pozitif → throttle direkt kullan
+//  RStickX() sağa = pozitif → steer olarak direkt kullan
+// =============================================================================
+#if RX_INPUT_SOURCE == INPUT_PS4
+void processPs4() {
+  if (!ps4Connected || !PS4.isConnected()) return;
+
+  // ── Stickler → -100..+100 ────────────────────────────────────────────────
+  // LStickY() yukarı=pozitif (kütüphane zaten çevirmiş)
+  int t = constrain((int)PS4.LStickY() * 100 / 127, -100, 100);
+  int s = constrain((int)PS4.RStickX() * 100 / 127, -100, 100);
+  if (abs(t) < PS_STICK_DEADBAND) t = 0;
+  if (abs(s) < PS_STICK_DEADBAND) s = 0;
+
+  // ── L2/R2 → Trim ─────────────────────────────────────────────────────────
+  int l2 = PS4.L2Value();  // uint8_t 0..255
+  int r2 = PS4.R2Value();
+  psTrim = map(r2 - l2, -255, 255, -PS_TRIM_SCALE, PS_TRIM_SCALE);
+  psTrim = constrain(psTrim, -PS_TRIM_SCALE, PS_TRIM_SCALE);
+
+  // ── L1/R1 → Gyro Gain (kenar tetikli) ────────────────────────────────────
+  bool l1 = PS4.L1();
+  bool r1 = PS4.R1();
+  if (l1 && !psL1Prev) psGyroGain = constrain(psGyroGain - PS_GYRO_GAIN_STEP, 0, 100);
+  if (r1 && !psR1Prev) psGyroGain = constrain(psGyroGain + PS_GYRO_GAIN_STEP, 0, 100);
+  psL1Prev = l1;
+  psR1Prev = r1;
+
+  // ── L3 (sol stick bas) → Gyro Direction toggle ───────────────────────────
+  bool l3 = PS4.L3();
+  if (l3 && !psL3Prev) {
+    psGyroDir = -psGyroDir;
+    Serial.printf("[PS4] Gyro dir: %+d\n", psGyroDir);
+    // Kontrolcüye yön ile renk geri bildirimi: normal=mavi, ters=kırmızı
+    if (psGyroDir > 0) PS4.setLed(0, 0, 255);
+    else               PS4.setLed(255, 0, 0);
+  }
+  psL3Prev = l3;
+
+  // ── Cross basılı tut 1s → Trim sıfırla ───────────────────────────────────
+  bool cross = PS4.Cross();
+  if (cross && !psCrossPrev) psCrossHoldMs = millis();
+  if (cross && (millis() - psCrossHoldMs > 1000)) {
+    psTrim = 0;
+    PS4.setLed(0, 255, 0);  // yeşil: trim sıfırlandı
+  }
+  psCrossPrev = cross;
+
+  // ── RCPacket oluştur ──────────────────────────────────────────────────────
+  current.throttle = (int8_t)t;
+  current.steer    = (int8_t)constrain(s + psTrim, -100, 100);
+  current.seq++;
+  current.gyroGain = (int8_t)psGyroGain;
+  current.gyroDir  = (int8_t)psGyroDir;
+  applyRC(current);
+}
+#endif  // INPUT_PS4
 
 // =============================================================================
 //  SETUP
@@ -404,14 +511,13 @@ void processGamepad() {
 void setup() {
   Serial.begin(115200);
   Serial.println("\n=== RC RECEIVER BASLIYOR ===");
-  Serial.printf("[BOARD] %s\n",
-    (BOARD_TYPE == BOARD_ESP32) ? "ESP32" : "ESP8266");
+  Serial.printf("[BOARD] %s\n", (BOARD_TYPE == BOARD_ESP32) ? "ESP32" : "ESP8266");
   Serial.printf("[INPUT] %s\n",
     (RX_INPUT_SOURCE == INPUT_ESPNOW)  ? "ESP-NOW" :
     (RX_INPUT_SOURCE == INPUT_ANDROID) ? "Android UDP" :
-    (RX_INPUT_SOURCE == INPUT_PS3)     ? "PS3 Bluetooth" : "PS4 Bluetooth");
+    (RX_INPUT_SOURCE == INPUT_PS3)     ? "PS3 (esp32-ps3)" : "PS4 (PS4_Controller_Host)");
 
-  // 1. Pil (WiFi/BT öncesi)
+  // 1. Pil (WiFi/BT öncesi — ADC gürültüsünü önler)
   battery.begin();
 
   // 2. Motor & Servo
@@ -425,7 +531,7 @@ void setup() {
   // 4. Gyro
   gyro.begin();
 
-// ── WiFi + ESP-NOW ────────────────────────────────────────────────────────
+  // ── WiFi + UDP (ESPNOW ve ANDROID modları) ────────────────────────────────
 #if RX_INPUT_SOURCE == INPUT_ESPNOW || RX_INPUT_SOURCE == INPUT_ANDROID
   WiFi.mode(WIFI_AP);
   WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD, WIFI_AP_CHANNEL);
@@ -435,6 +541,7 @@ void setup() {
   udpTelemetry.begin(TELEMETRY_PORT + 100);
 #endif
 
+  // ── ESP-NOW peer kaydı ────────────────────────────────────────────────────
 #if RX_INPUT_SOURCE == INPUT_ESPNOW
   #if BOARD_TYPE == BOARD_ESP8266
     if (esp_now_init() != 0) { Serial.println("[ESP-NOW] HATA"); ESP.restart(); }
@@ -454,21 +561,39 @@ void setup() {
                 txMac[0],txMac[1],txMac[2],txMac[3],txMac[4],txMac[5]);
 #endif
 
-// ── Bluetooth PS3/PS4 ─────────────────────────────────────────────────────
-#if RX_INPUT_SOURCE == INPUT_PS3 || RX_INPUT_SOURCE == INPUT_PS4
-  BP32.setup(&onConnectedGamepad, &onDisconnectedGamepad);
-  BP32.forgetBluetoothKeys();   // önceki eşleşmeleri unut — temiz başlangıç
-  #if RX_INPUT_SOURCE == INPUT_PS3
-    Serial.println("[BT] PS3 modu — kontrolcüyü PS butonu ile baglayin.");
-  #else
-    Serial.println("[BT] PS4 modu — kontrolcüyü Share+PS butonuyla baglayin.");
-  #endif
+  // ── PS3 — esp32-ps3 ───────────────────────────────────────────────────────
+#if RX_INPUT_SOURCE == INPUT_PS3
+  Ps3.attachOnConnect(onPs3Connect);
+  Ps3.attachOnDisconnect(onPs3Disconnect);
+
+  // PS_BT_MAC boşsa varsayılan MAC ile başlat, doluysa o MAC ile
+  if (strlen(PS_BT_MAC) > 0)
+    Ps3.begin(PS_BT_MAC);
+  else
+    Ps3.begin();
+
+  Serial.println("[PS3] Hazir. Kontrolcuyu PS butonu ile baglayın.");
+  Serial.printf("[PS3] BT MAC: %s\n",
+    (strlen(PS_BT_MAC) > 0) ? PS_BT_MAC : "(varsayilan)");
+#endif
+
+  // ── PS4 — PS4_Controller_Host ─────────────────────────────────────────────
+#if RX_INPUT_SOURCE == INPUT_PS4
+  PS4.attachOnConnect(onPs4Connect);
+  PS4.attachOnDisconnect(onPs4Disconnect);
+
+  if (strlen(PS_BT_MAC) > 0)
+    PS4.begin(PS_BT_MAC);
+  else
+    PS4.begin();
+
+  Serial.println("[PS4] Hazir. Share + PS butonlariyla baglayın.");
 #endif
 
   applyFailsafe();
 
   if (battery.cells() == 0)
-    Serial.println("[VBAT] PIl yok — motor kalici kilitli");
+    Serial.println("[VBAT] Pil yok — motor kalici kilitli");
   else
     Serial.printf("[VBAT] %dS  %.2fV  %.2fV/h  %s\n",
       battery.cells(), battery.voltage(), battery.cellVoltage(),
@@ -482,7 +607,7 @@ void setup() {
 // =============================================================================
 void loop() {
 
-// ── UDP Komut (ESPNOW + ANDROID modları) ─────────────────────────────────
+  // ── UDP Komut ────────────────────────────────────────────────────────────
 #if RX_INPUT_SOURCE == INPUT_ESPNOW || RX_INPUT_SOURCE == INPUT_ANDROID
   {
     int len = udpCmd.parsePacket();
@@ -495,10 +620,14 @@ void loop() {
   }
 #endif
 
-// ── Gamepad (PS3/PS4) ─────────────────────────────────────────────────────
-#if RX_INPUT_SOURCE == INPUT_PS3 || RX_INPUT_SOURCE == INPUT_PS4
-  BP32.update();
-  processGamepad();
+  // ── PS3 kontrolcü işle ───────────────────────────────────────────────────
+#if RX_INPUT_SOURCE == INPUT_PS3
+  processPs3();
+#endif
+
+  // ── PS4 kontrolcü işle ───────────────────────────────────────────────────
+#if RX_INPUT_SOURCE == INPUT_PS4
+  processPs4();
 #endif
 
   // Failsafe
@@ -508,7 +637,7 @@ void loop() {
   battery.update();
   if (battery.isLowVoltage()) { motorFree(); prevFwd = false; }
 
-// ── UDP Telemetri (ESPNOW + ANDROID) ─────────────────────────────────────
+  // ── UDP Telemetri ─────────────────────────────────────────────────────────
 #if RX_INPUT_SOURCE == INPUT_ESPNOW || RX_INPUT_SOURCE == INPUT_ANDROID
   sendTelemetryUdp();
 #endif
