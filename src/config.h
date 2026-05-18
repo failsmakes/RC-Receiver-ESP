@@ -83,24 +83,24 @@
   #define VBAT_ADC_REF     3.3f
 
 #elif BOARD_TYPE == BOARD_ESP32
-  // ── ESP32 DevKit v1 (30 pin) ──────────────────────────────────────────────
+  // ── ESP32-C3 SUPERMINI (21 pin) ──────────────────────────────────────────────
   // Motor (RZ7886 — IN1/IN2 LEDC PWM)
-  #define MOTOR_IN1_PIN    25
-  #define MOTOR_IN2_PIN    26
+  #define MOTOR_IN1_PIN    4
+  #define MOTOR_IN2_PIN    3
   #define MOTOR_PWM_FREQ   20000
   #define MOTOR_PWM_MAX    255
   #define MOTOR_LEDC_CH1   0    // LEDC kanal 0 → IN1
   #define MOTOR_LEDC_CH2   1    // LEDC kanal 1 → IN2
   #define MOTOR_LEDC_RES   8    // 8-bit (0-255)
   // Servo
-  #define SERVO_PIN        27
+  #define SERVO_PIN        7
   // SBUS TX
-  #define SBUS_TX_PIN      17
+  #define SBUS_TX_PIN      6
   // Gyro I2C
-  #define GYRO_SDA_PIN     21
-  #define GYRO_SCL_PIN     22
+  #define GYRO_SDA_PIN     8
+  #define GYRO_SCL_PIN     9
   // ADC  (ESP32 ADC1_CH6 = GPIO34, giriş only, 12-bit 0-4095)
-  #define VBAT_ADC_PIN     34
+  #define VBAT_ADC_PIN     5  //0,1,2,3,4,5 ADC pins
   #define VBAT_ADC_MAX     4095.0f
   #define VBAT_ADC_REF     3.3f
 
