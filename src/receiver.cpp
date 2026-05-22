@@ -256,22 +256,25 @@ void motorBrake() {
 
 void motorDrive(int t) {
   if (battery.isLowVoltage()) { motorFree(); prevFwd = false; return; }
-  if (abs(t) <= THROTTLE_DEADBAND) { motorFree(); prevFwd = false; return; }
+  //if (abs(t) <= THROTTLE_DEADBAND) { motorFree(); prevFwd = false; return; }
 
-  int pwm = map(abs(t), THROTTLE_DEADBAND, 100, 0, MOTOR_PWM_MAX);
-  pwm = constrain(pwm, 0, MOTOR_PWM_MAX);
-
-  if (t > 0) {
+  // map(): deadband sınırından itibaren doğrusal olarak MOTOR_MIN_PWM'den
+  // MOTOR_PWM_MAX'a çıkar.
+  // MOTOR_MIN_PWM sayesinde motor, düşük throttle değerlerinde bile
+  // harekete geçecek kadar yeterli PWM alır — titreşim önlenir.
+  int pwm = map(abs(t), THROTTLE_DEADBAND + 1, 100, MOTOR_MIN_PWM, MOTOR_PWM_MAX);
+  pwm = constrain(pwm, MOTOR_MIN_PWM, MOTOR_PWM_MAX);
+  
+  if (t > THROTTLE_DEADBAND) {
     platformPwmWrite(MOTOR_IN1_PIN, pwm);
     platformPwmWrite(MOTOR_IN2_PIN, 0);
     prevFwd = true;
-  } else {
-    if (prevFwd) { motorBrake(); delay(80); motorFree(); prevFwd = false; }
-    else {
+  } else if (prevFwd && (abs(t) > THROTTLE_DEADBAND)) { motorBrake();
+  } else if (abs(t) > THROTTLE_DEADBAND) {
+      prevFwd = false;
       platformPwmWrite(MOTOR_IN1_PIN, 0);
       platformPwmWrite(MOTOR_IN2_PIN, pwm);
-    }
-  }
+  } else if (abs(t) <= THROTTLE_DEADBAND) { motorFree(); prevFwd = false; }
 }
 
 // =============================================================================

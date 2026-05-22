@@ -70,6 +70,11 @@
   #define MOTOR_IN2_PIN    4     // D2 = GPIO4
   #define MOTOR_PWM_FREQ   20000
   #define MOTOR_PWM_MAX    255
+  // Minimum efektif PWM: bu değerin altında motor dönmez, titreşir.
+  // Motorun güvenle harekete geçtiği en düşük PWM değeridir.
+  // Motorunuza göre 40–70 arası ayarlayın; yüksek tutmak titreşimi önler,
+  // çok yüksek tutmak düşük hız kontrolünü kötüleştirir.
+  #define MOTOR_MIN_PWM    50
   // Servo
   #define SERVO_PIN        2     // D4 = GPIO2
   // SBUS TX
@@ -83,24 +88,29 @@
   #define VBAT_ADC_REF     3.3f
 
 #elif BOARD_TYPE == BOARD_ESP32
-  // ── ESP32-C3 SUPERMINI (21 pin) ──────────────────────────────────────────────
+  // ── ESP32 DevKit v1 (30 pin) ──────────────────────────────────────────────
   // Motor (RZ7886 — IN1/IN2 LEDC PWM)
-  #define MOTOR_IN1_PIN    4
-  #define MOTOR_IN2_PIN    3
-  #define MOTOR_PWM_FREQ   20000
+  #define MOTOR_IN1_PIN    25
+  #define MOTOR_IN2_PIN    26
+  #define MOTOR_PWM_FREQ   1000
   #define MOTOR_PWM_MAX    255
   #define MOTOR_LEDC_CH1   0    // LEDC kanal 0 → IN1
   #define MOTOR_LEDC_CH2   1    // LEDC kanal 1 → IN2
   #define MOTOR_LEDC_RES   8    // 8-bit (0-255)
+  // Minimum efektif PWM: bu değerin altında motor dönmez, titreşir.
+  // Motorun güvenle harekete geçtiği en düşük PWM değeridir.
+  // Motorunuza göre 40–70 arası ayarlayın; yüksek tutmak titreşimi önler,
+  // çok yüksek tutmak düşük hız kontrolünü kötüleştirir.
+  #define MOTOR_MIN_PWM    50
   // Servo
-  #define SERVO_PIN        7
+  #define SERVO_PIN        27
   // SBUS TX
-  #define SBUS_TX_PIN      6
+  #define SBUS_TX_PIN      17
   // Gyro I2C
-  #define GYRO_SDA_PIN     8
-  #define GYRO_SCL_PIN     9
+  #define GYRO_SDA_PIN     21
+  #define GYRO_SCL_PIN     22
   // ADC  (ESP32 ADC1_CH6 = GPIO34, giriş only, 12-bit 0-4095)
-  #define VBAT_ADC_PIN     5  //0,1,2,3,4,5 ADC pins
+  #define VBAT_ADC_PIN     34  //0,1,2,3,4,5 ADC pins
   #define VBAT_ADC_MAX     4095.0f
   #define VBAT_ADC_REF     3.3f
 
@@ -128,8 +138,8 @@
 // =============================================================================
 //  Gerilim bölücü: Vout = Vbat × R2 / (R1+R2)  < ADC_REF
 //  R1=47kΩ, R2=10kΩ → maks 2.2V  (hem 2S hem 3S güvenli)
-#define VBAT_R1              47.0f
-#define VBAT_R2              10.0f
+#define VBAT_R1              100.0f
+#define VBAT_R2              20.0f
 #define VBAT_SAMPLES         16
 #define VBAT_INTERVAL_MS     500
 // Hücre tespiti eşikleri
