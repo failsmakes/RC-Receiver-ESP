@@ -91,7 +91,7 @@ public:
     : _gyroFilter(GYRO_LPF_CUTOFF_HZ, GYRO_LOOP_MS / 1000.0f)
     , _pid(GYRO_PID_P, GYRO_PID_I, GYRO_PID_D, GYRO_PID_D_LPF_HZ, GYRO_LOOP_MS / 1000.0f)
     , _gain(GYRO_GAIN_DEFAULT), _direction(GYRO_DIRECTION_DEFAULT)
-    , _enabled(true), _lastMs(0), _lastOutput(0), _lastRawRate(0), _lastCorrection(0)
+    , _enabled(true), _lastMs(0), _lastOutput(0), _lastRawRate(0.0f), _lastCorrection(0)
   {}
 
   bool begin() {
@@ -120,7 +120,7 @@ public:
 
     _lastOutput     = finalSteer;
     _lastRawRate    = rawRate;
-    _lastCorrection = (int)correction;
+    _lastCorrection = int(finalSteer - userSteer);      //correction;
     return finalSteer;
   }
 
@@ -129,7 +129,7 @@ public:
   int   getGain()          const { return _gain; }
   int   getDirection()     const { return _direction; }
   float getRawRate()       const { return _lastRawRate; }
-  int   getCorrection()    const { return _lastCorrection; }
+  int getCorrection()      const { return _lastCorrection; }
   bool  isEnabled()        const { return _enabled; }
   void  resetPid()               { _pid.reset(); _gyroFilter.reset(); }
 

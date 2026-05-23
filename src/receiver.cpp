@@ -374,7 +374,7 @@ void parseUDP(const char* buf, IPAddress senderIp) {
 // =============================================================================
 #if RX_INPUT_SOURCE == INPUT_PS3
 void processPs3() {
-  if (!ps3Connected || !Ps3.isConnected()) return;
+  if (!ps3Connected || !Ps3.isConnected()) { Serial.println("[PS3] Bağlantı yok!"); return; }
 
   // ── Stickler → -100..+100 ────────────────────────────────────────────────
   // ly: yukarı = negatif → ters çevir

@@ -36,7 +36,7 @@
 #define INPUT_PS3       3
 #define INPUT_PS4       4
 
-#define RX_INPUT_SOURCE INPUT_ANDROID    // ← buradan değiştir
+#define RX_INPUT_SOURCE INPUT_PS3    // ← buradan değiştir
 
 // Derleme zamanı kontrol
 #if (RX_INPUT_SOURCE == INPUT_PS3 || RX_INPUT_SOURCE == INPUT_PS4) && (BOARD_TYPE == BOARD_ESP8266)
@@ -172,7 +172,7 @@
 #define GYRO_PID_I           0.0f
 #define GYRO_PID_D          -0.4f
 #define GYRO_PID_D_LPF_HZ   10.0f
-#define GYRO_OUTPUT_SCALE    800.0f
+#define GYRO_OUTPUT_SCALE    4.0f
 
 // =============================================================================
 //  11. PS3 / PS4 KONTROLCÜ AYARLARI
