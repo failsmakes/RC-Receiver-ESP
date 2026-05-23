@@ -27,7 +27,7 @@
 #endif
 
 // ─── PWM soyutlaması ─────────────────────────────────────────────────────────
-#if BOARD_TYPE == BOARD_ESP8266
+/*#if BOARD_TYPE == BOARD_ESP8266
 
   inline void platformPwmSetup() {
     analogWriteFreq(MOTOR_PWM_FREQ);
@@ -52,7 +52,7 @@
     else                      ledcWrite(MOTOR_LEDC_CH2, value);
   }
 
-#endif
+#endif*/
 
 // ─── ADC okuma (normalize: 0.0–1.0) ─────────────────────────────────────────
 inline float platformAdcRead() {

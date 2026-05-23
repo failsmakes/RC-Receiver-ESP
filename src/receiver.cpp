@@ -21,6 +21,7 @@
 // =============================================================================
 
 #include "config.h"
+#include <FS_MX1508.h>
 #include <Arduino.h>
 #if BOARD_TYPE == BOARD_ESP8266
   #include <Servo.h>
@@ -87,7 +88,7 @@
   void onPs4Connect()    { ps4Connected = true;  PS4.setLed(0, 255, 0); Serial.println("[PS4] Baglandi!"); }
   void onPs4Disconnect() { ps4Connected = false; Serial.println("[PS4] Baglanti kesildi."); }
 #endif
-
+MX1508 motorA(MOTOR_IN1_PIN, MOTOR_IN2_PIN);
 // =============================================================================
 //  PİL YÖNETİCİSİ
 // =============================================================================
@@ -151,22 +152,19 @@ private:
 
   void _playStartupBeep(uint8_t n) {
     Serial.printf("[BEEP] %dS → %dx%d darbe\n", n, BEEP_REPEAT_COUNT, n);
-    pinMode(MOTOR_IN1_PIN, OUTPUT);
-    pinMode(MOTOR_IN2_PIN, OUTPUT);
-    platformPwmSetup();
-    platformPwmWrite(MOTOR_IN1_PIN, 0);
-    platformPwmWrite(MOTOR_IN2_PIN, 0);
+    motorA.setResolution(MOTOR_LEDC_RES);
+    motorA.setFrequency(BEEP_FREQUENCY);
+    motorA.motorStop();
     for (int rep = 0; rep < BEEP_REPEAT_COUNT; rep++) {
       for (uint8_t i = 0; i < n; i++) {
-        platformPwmWrite(MOTOR_IN1_PIN, BEEP_PWM_VALUE);
+        motorA.motorGo(BEEP_PWM_VALUE);
         delay(BEEP_ON_MS);
-        platformPwmWrite(MOTOR_IN1_PIN, 0);
+        motorA.motorBrake(100);
         if (i < n - 1) delay(BEEP_OFF_MS);
       }
       if (rep < BEEP_REPEAT_COUNT - 1) delay(BEEP_CELL_PAUSE_MS);
     }
-    platformPwmWrite(MOTOR_IN1_PIN, 0);
-    platformPwmWrite(MOTOR_IN2_PIN, 0);
+    motorA.motorStop();
     delay(300);
   }
 };
@@ -237,44 +235,21 @@ SbusOutput sbus(SBUS_TX_PIN, SBUS_INVERT_SW);
 //  MOTOR (RZ7886)
 // =============================================================================
 void motorSetup() {
-  pinMode(MOTOR_IN1_PIN, OUTPUT);
-  pinMode(MOTOR_IN2_PIN, OUTPUT);
-  platformPwmSetup();
-  platformPwmWrite(MOTOR_IN1_PIN, 0);
-  platformPwmWrite(MOTOR_IN2_PIN, 0);
-}
-
-void motorFree() {
-  platformPwmWrite(MOTOR_IN1_PIN, 0);
-  platformPwmWrite(MOTOR_IN2_PIN, 0);
-}
-
-void motorBrake() {
-  platformPwmWrite(MOTOR_IN1_PIN, MOTOR_PWM_MAX);
-  platformPwmWrite(MOTOR_IN2_PIN, MOTOR_PWM_MAX);
+  motorA.setResolution(MOTOR_LEDC_RES);
+  motorA.setFrequency(MOTOR_PWM_FREQ);
 }
 
 void motorDrive(int t) {
-  if (battery.isLowVoltage()) { motorFree(); prevFwd = false; return; }
-  //if (abs(t) <= THROTTLE_DEADBAND) { motorFree(); prevFwd = false; return; }
-
-  // map(): deadband sınırından itibaren doğrusal olarak MOTOR_MIN_PWM'den
-  // MOTOR_PWM_MAX'a çıkar.
-  // MOTOR_MIN_PWM sayesinde motor, düşük throttle değerlerinde bile
-  // harekete geçecek kadar yeterli PWM alır — titreşim önlenir.
-  int pwm = map(abs(t), THROTTLE_DEADBAND + 1, 100, MOTOR_MIN_PWM, MOTOR_PWM_MAX);
-  pwm = constrain(pwm, MOTOR_MIN_PWM, MOTOR_PWM_MAX);
+  if (battery.isLowVoltage()) { motorA.motorStop(); prevFwd = false; return; }
   
   if (t > THROTTLE_DEADBAND) {
-    platformPwmWrite(MOTOR_IN1_PIN, pwm);
-    platformPwmWrite(MOTOR_IN2_PIN, 0);
+    motorA.motorGoP(t);
     prevFwd = true;
-  } else if (prevFwd && (abs(t) > THROTTLE_DEADBAND)) { motorBrake();
+  } else if (prevFwd && (abs(t) > THROTTLE_DEADBAND)) { motorA.motorBrake(abs(t));
   } else if (abs(t) > THROTTLE_DEADBAND) {
       prevFwd = false;
-      platformPwmWrite(MOTOR_IN1_PIN, 0);
-      platformPwmWrite(MOTOR_IN2_PIN, pwm);
-  } else if (abs(t) <= THROTTLE_DEADBAND) { motorFree(); prevFwd = false; }
+      motorA.motorGoP(t);
+  } else if (abs(t) <= THROTTLE_DEADBAND) { motorA.motorStop(); prevFwd = false; }
 }
 
 // =============================================================================
@@ -308,7 +283,7 @@ void applyRC(const RCPacket& p) {
 }
 
 void applyFailsafe() {
-  motorFree(); prevFwd = false;
+  motorA.motorStop(); prevFwd = false;
   steerServo.write(SERVO_CENTER);
   for (auto& ch : sbus.channels) ch = SbusOutput::CH_MID;
   sbus.setFailsafe(true);
@@ -638,7 +613,7 @@ void loop() {
 
   // Voltaj güncelle
   battery.update();
-  if (battery.isLowVoltage()) { motorFree(); prevFwd = false; }
+  if (battery.isLowVoltage()) { motorA.motorStop(); prevFwd = false; }
 
   // ── UDP Telemetri ─────────────────────────────────────────────────────────
 #if RX_INPUT_SOURCE == INPUT_ESPNOW || RX_INPUT_SOURCE == INPUT_ANDROID

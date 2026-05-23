@@ -92,7 +92,7 @@
   // Motor (RZ7886 — IN1/IN2 LEDC PWM)
   #define MOTOR_IN1_PIN    25
   #define MOTOR_IN2_PIN    26
-  #define MOTOR_PWM_FREQ   1000
+  #define MOTOR_PWM_FREQ   10000
   #define MOTOR_PWM_MAX    255
   #define MOTOR_LEDC_CH1   0    // LEDC kanal 0 → IN1
   #define MOTOR_LEDC_CH2   1    // LEDC kanal 1 → IN2
@@ -101,7 +101,7 @@
   // Motorun güvenle harekete geçtiği en düşük PWM değeridir.
   // Motorunuza göre 40–70 arası ayarlayın; yüksek tutmak titreşimi önler,
   // çok yüksek tutmak düşük hız kontrolünü kötüleştirir.
-  #define MOTOR_MIN_PWM    50
+  #define MOTOR_MIN_PWM    100
   // Servo
   #define SERVO_PIN        27
   // SBUS TX
@@ -122,7 +122,7 @@
 #define SERVO_CENTER     90
 #define SERVO_MAX_LEFT   0
 #define SERVO_MAX_RIGHT  180
-#define THROTTLE_DEADBAND   5
+#define THROTTLE_DEADBAND   10
 #define STEER_DEADBAND      3
 #define FAILSAFE_MS         500
 
@@ -152,11 +152,12 @@
 // =============================================================================
 //  9. MOTOR BEEP (Açılış ses sinyali)
 // =============================================================================
-#define BEEP_PWM_VALUE       80
-#define BEEP_ON_MS           80
-#define BEEP_OFF_MS          200
+#define BEEP_PWM_VALUE       128
+#define BEEP_ON_MS           40
+#define BEEP_OFF_MS          100
 #define BEEP_CELL_PAUSE_MS   700
 #define BEEP_REPEAT_COUNT    2
+#define BEEP_FREQUENCY       5000
 
 // =============================================================================
 //  10. GYRO (MPU6050)
