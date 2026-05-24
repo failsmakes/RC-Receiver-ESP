@@ -193,7 +193,8 @@
 //    PS3 kütüphanesi belirli bir MAC bekler — eşleştirme için gereklidir.
 //    esp32-ps3 README'sindeki "Ps3Address" örneğini çalıştırıp MAC'i öğrenin.
 //
-#define PS_BT_MAC   "5c:6d:20:3f:d2:f8"   // örn: "01:02:03:04:05:06" — boş = varsayılan MAC
+//#define PS_BT_MAC   "5c:6d:20:3f:d2:f8"   // örn: "01:02:03:04:05:06" — boş = varsayılan MAC
+#define PS_BT_MAC   ""
 
 //  Thumbstick deadband: int8_t değer aralığında (-128..+127)
 //  Merkez etrafı bu değer kadar serbest bölge

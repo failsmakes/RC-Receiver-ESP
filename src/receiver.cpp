@@ -374,8 +374,7 @@ void parseUDP(const char* buf, IPAddress senderIp) {
 // =============================================================================
 #if RX_INPUT_SOURCE == INPUT_PS3
 void processPs3() {
-  if (!ps3Connected || !Ps3.isConnected()) { Serial.println("[PS3] Bağlantı yok!"); return; }
-
+  if (!ps3Connected || !Ps3.isConnected()) { return; }
   // ── Stickler → -100..+100 ────────────────────────────────────────────────
   // ly: yukarı = negatif → ters çevir
   int t = constrain((int)Ps3.data.analog.stick.ly * -100 / 127, -100, 100);
@@ -549,10 +548,20 @@ void setup() {
     Ps3.begin(PS_BT_MAC);
   else
     Ps3.begin();
-
+  String address = Ps3.getAddress();
   Serial.println("[PS3] Hazir. Kontrolcuyu PS butonu ile baglayın.");
-  Serial.printf("[PS3] BT MAC: %s\n",
-    (strlen(PS_BT_MAC) > 0) ? PS_BT_MAC : "(varsayilan)");
+  
+    // Get and print the MAC address
+  uint8_t mac[6];
+  esp_read_mac(mac, ESP_MAC_BT);
+  
+  Serial.print("[PS3] BT MAC: ");
+  for (int i = 0; i < 6; i++) {
+    Serial.printf("%02X", mac[i]);
+    if (i < 5) Serial.print(":");
+  }
+  Serial.println();
+
 #endif
 
   // ── PS4 — PS4_Controller_Host ─────────────────────────────────────────────
