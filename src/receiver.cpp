@@ -105,7 +105,7 @@ public:
       delayMicroseconds(300);
     }
     frac /= samples;
-    return frac * VBAT_ADC_REF * ((VBAT_R1 + VBAT_R2) / VBAT_R2);
+    return frac * VBAT_ADC_REF * ((VBAT_R1 + VBAT_R2) / VBAT_R2) * VBAT_CF;
   }
 
   void begin() {
@@ -124,6 +124,8 @@ public:
     if (millis() - _lastMs < VBAT_INTERVAL_MS) return;
     _lastMs  = millis();
     _voltage = readRawVoltage(VBAT_SAMPLES);
+    _cells   = (_voltage < CELL_DETECT_MIN_V) ? 0
+             : (_voltage <= CELL_DETECT_2S_MAX) ? 2 : 3;
     _updateCellVoltage();
   }
 
@@ -241,14 +243,14 @@ void motorSetup() {
 
 void motorDrive(int t) {
   if (battery.isLowVoltage()) { motorA.motorStop(); prevFwd = false; return; }
-  
+  int pwm = map(abs(t), 0, 100, 0, MOTOR_MAX_RATE);
   if (t > THROTTLE_DEADBAND) {
-    motorA.motorGoP(t);
+    motorA.motorGoP(pwm);
     prevFwd = true;
-  } else if (prevFwd && (abs(t) > THROTTLE_DEADBAND)) { motorA.motorBrake(abs(t));
+  } else if (prevFwd && (abs(t) > THROTTLE_DEADBAND)) { motorA.motorBrake(pwm);
   } else if (abs(t) > THROTTLE_DEADBAND) {
       prevFwd = false;
-      motorA.motorGoP(t);
+      motorA.motorGoP(-1*pwm);
   } else if (abs(t) <= THROTTLE_DEADBAND) { motorA.motorStop(); prevFwd = false; }
 }
 

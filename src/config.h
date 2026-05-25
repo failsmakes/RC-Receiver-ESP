@@ -36,7 +36,7 @@
 #define INPUT_PS3       3
 #define INPUT_PS4       4
 
-#define RX_INPUT_SOURCE INPUT_PS3    // ← buradan değiştir
+#define RX_INPUT_SOURCE INPUT_ANDROID    // ← buradan değiştir
 
 // Derleme zamanı kontrol
 #if (RX_INPUT_SOURCE == INPUT_PS3 || RX_INPUT_SOURCE == INPUT_PS4) && (BOARD_TYPE == BOARD_ESP8266)
@@ -69,12 +69,7 @@
   #define MOTOR_IN1_PIN    5     // D1 = GPIO5
   #define MOTOR_IN2_PIN    4     // D2 = GPIO4
   #define MOTOR_PWM_FREQ   20000
-  #define MOTOR_PWM_MAX    255
-  // Minimum efektif PWM: bu değerin altında motor dönmez, titreşir.
-  // Motorun güvenle harekete geçtiği en düşük PWM değeridir.
-  // Motorunuza göre 40–70 arası ayarlayın; yüksek tutmak titreşimi önler,
-  // çok yüksek tutmak düşük hız kontrolünü kötüleştirir.
-  #define MOTOR_MIN_PWM    50
+  #define MOTOR_MAX_RATE   60
   // Servo
   #define SERVO_PIN        2     // D4 = GPIO2
   // SBUS TX
@@ -93,22 +88,17 @@
   #define MOTOR_IN1_PIN    25
   #define MOTOR_IN2_PIN    26
   #define MOTOR_PWM_FREQ   10000
-  #define MOTOR_PWM_MAX    255
+  #define MOTOR_MAX_RATE   60
   #define MOTOR_LEDC_CH1   0    // LEDC kanal 0 → IN1
   #define MOTOR_LEDC_CH2   1    // LEDC kanal 1 → IN2
   #define MOTOR_LEDC_RES   8    // 8-bit (0-255)
-  // Minimum efektif PWM: bu değerin altında motor dönmez, titreşir.
-  // Motorun güvenle harekete geçtiği en düşük PWM değeridir.
-  // Motorunuza göre 40–70 arası ayarlayın; yüksek tutmak titreşimi önler,
-  // çok yüksek tutmak düşük hız kontrolünü kötüleştirir.
-  #define MOTOR_MIN_PWM    100
   // Servo
   #define SERVO_PIN        27
   // SBUS TX
   #define SBUS_TX_PIN      17
   // Gyro I2C
-  #define GYRO_SDA_PIN     21
-  #define GYRO_SCL_PIN     22
+  #define GYRO_SDA_PIN     18
+  #define GYRO_SCL_PIN     19
   // ADC  (ESP32 ADC1_CH6 = GPIO34, giriş only, 12-bit 0-4095)
   #define VBAT_ADC_PIN     34  //0,1,2,3,4,5 ADC pins
   #define VBAT_ADC_MAX     4095.0f
@@ -142,11 +132,12 @@
 #define VBAT_R2              20.0f
 #define VBAT_SAMPLES         16
 #define VBAT_INTERVAL_MS     500
+#define VBAT_CF              1.16f
 // Hücre tespiti eşikleri
 #define CELL_DETECT_MIN_V    4.5f    // altında → pil yok
 #define CELL_DETECT_2S_MAX   8.9f    // altında 2S, üstünde 3S
 // Düşük voltaj koruması
-#define CELL_MIN_VOLTAGE     3.4f    // V/hücre — motor engelleme
+#define CELL_MIN_VOLTAGE     3.3f    // V/hücre — motor engelleme
 #define CELL_RECOVER_VOLTAGE 3.5f    // V/hücre — histerezis açma
 
 // =============================================================================

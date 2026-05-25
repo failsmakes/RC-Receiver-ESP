@@ -26,44 +26,6 @@
   #endif
 #endif
 
-// ─── PWM soyutlaması ─────────────────────────────────────────────────────────
-/*#if BOARD_TYPE == BOARD_ESP8266
-
-  inline void platformPwmSetup() {
-    analogWriteFreq(MOTOR_PWM_FREQ);
-    analogWriteRange(MOTOR_PWM_MAX);
-  }
-  inline void platformPwmWrite(uint8_t pin, int value) {
-    analogWrite(pin, value);
-  }
-
-#elif BOARD_TYPE == BOARD_ESP32
-
-  // LEDC: 2 kanal (IN1, IN2)
-  inline void platformPwmSetup() {
-    ledcSetup(MOTOR_LEDC_CH1, MOTOR_PWM_FREQ, MOTOR_LEDC_RES);
-    ledcSetup(MOTOR_LEDC_CH2, MOTOR_PWM_FREQ, MOTOR_LEDC_RES);
-    ledcAttachPin(MOTOR_IN1_PIN, MOTOR_LEDC_CH1);
-    ledcAttachPin(MOTOR_IN2_PIN, MOTOR_LEDC_CH2);
-  }
-  // pin parametresi IN1 veya IN2 pini — ilgili LEDC kanalını seçer
-  inline void platformPwmWrite(uint8_t pin, int value) {
-    if (pin == MOTOR_IN1_PIN) ledcWrite(MOTOR_LEDC_CH1, value);
-    else                      ledcWrite(MOTOR_LEDC_CH2, value);
-  }
-
-#endif*/
-
-// ─── ADC okuma (normalize: 0.0–1.0) ─────────────────────────────────────────
-inline float platformAdcRead() {
-  long sum = 0;
-  for (int i = 0; i < VBAT_SAMPLES; i++) {
-    sum += analogRead(VBAT_ADC_PIN);
-    delayMicroseconds(300);
-  }
-  return (float)sum / VBAT_SAMPLES / VBAT_ADC_MAX;
-}
-
 // ─── ESP-NOW soyutlaması ─────────────────────────────────────────────────────
 #if RX_INPUT_SOURCE == INPUT_ESPNOW
 
