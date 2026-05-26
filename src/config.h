@@ -31,12 +31,11 @@
 //
 //  NOT: INPUT_PS3 ve INPUT_PS4 yalnızca BOARD_ESP32 ile kullanılabilir.
 //
-#define INPUT_ESPNOW    1
-#define INPUT_ANDROID   2
-#define INPUT_PS3       3
-#define INPUT_PS4       4
+#define INPUT_NOPS      1
+#define INPUT_PS3       2
+#define INPUT_PS4       3
 
-#define RX_INPUT_SOURCE INPUT_ANDROID    // ← buradan değiştir
+//#define RX_INPUT_SOURCE INPUT_NOPS    // ← buradan değiştir
 
 // Derleme zamanı kontrol
 #if (RX_INPUT_SOURCE == INPUT_PS3 || RX_INPUT_SOURCE == INPUT_PS4) && (BOARD_TYPE == BOARD_ESP8266)
@@ -68,8 +67,6 @@
   // Motor (RZ7886 — IN1/IN2 PWM)
   #define MOTOR_IN1_PIN    5     // D1 = GPIO5
   #define MOTOR_IN2_PIN    4     // D2 = GPIO4
-  #define MOTOR_PWM_FREQ   20000
-  #define MOTOR_MAX_RATE   60
   // Servo
   #define SERVO_PIN        2     // D4 = GPIO2
   // SBUS TX
@@ -87,11 +84,6 @@
   // Motor (RZ7886 — IN1/IN2 LEDC PWM)
   #define MOTOR_IN1_PIN    25
   #define MOTOR_IN2_PIN    26
-  #define MOTOR_PWM_FREQ   10000
-  #define MOTOR_MAX_RATE   60
-  #define MOTOR_LEDC_CH1   0    // LEDC kanal 0 → IN1
-  #define MOTOR_LEDC_CH2   1    // LEDC kanal 1 → IN2
-  #define MOTOR_LEDC_RES   8    // 8-bit (0-255)
   // Servo
   #define SERVO_PIN        27
   // SBUS TX
@@ -109,12 +101,16 @@
 // =============================================================================
 //  6. MOTOR & SERVO PARAMETRELER
 // =============================================================================
-#define SERVO_CENTER     90
-#define SERVO_MAX_LEFT   0
-#define SERVO_MAX_RIGHT  180
+#define SERVO_CENTER        90
+#define SERVO_MAX_LEFT      0
+#define SERVO_MAX_RIGHT     180
 #define THROTTLE_DEADBAND   10
 #define STEER_DEADBAND      3
 #define FAILSAFE_MS         500
+#define MOTOR_PWM_FREQ      20000
+#define MOTOR_MAX_RATE      60
+#define MOTOR_PWM_RES       8    // 8-bit (0-255)
+#define THROTTLE_RAMP       1    // 0 to disable
 
 // =============================================================================
 //  7. SBUS ÇIKIŞI

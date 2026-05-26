@@ -5,7 +5,7 @@
 //
 //  config.h'den seçim yapılır:
 //    BOARD_TYPE       → BOARD_ESP8266 / BOARD_ESP32
-//    RX_INPUT_SOURCE  → INPUT_ESPNOW / INPUT_ANDROID / INPUT_PS3 / INPUT_PS4
+//    RX_INPUT_SOURCE  → INPUT_NOPS / INPUT_PS3 / INPUT_PS4
 //
 //  PS3 kütüphanesi : github.com/jvpernis/esp32-ps3
 //  PS4 kütüphanesi : github.com/pablomarquez76/PS4_Controller_Host
@@ -154,7 +154,7 @@ private:
 
   void _playStartupBeep(uint8_t n) {
     Serial.printf("[BEEP] %dS → %dx%d darbe\n", n, BEEP_REPEAT_COUNT, n);
-    motorA.setResolution(MOTOR_LEDC_RES);
+    motorA.setResolution(MOTOR_PWM_RES);
     motorA.setFrequency(BEEP_FREQUENCY);
     motorA.motorStop();
     for (int rep = 0; rep < BEEP_REPEAT_COUNT; rep++) {
@@ -202,13 +202,14 @@ GyroProcessor  gyro;
 
 RCPacket  current   = {0, 0, 0, GYRO_GAIN_DEFAULT, GYRO_DIRECTION_DEFAULT};
 bool      prevFwd   = false;
+int8_t    speed = 0;
 uint32_t  lastPktMs = 0;
 
-#if RX_INPUT_SOURCE == INPUT_ESPNOW
+#if RX_INPUT_SOURCE == INPUT_NOPS
   uint8_t txMac[6] = TX_MAC;
 #endif
 
-#if RX_INPUT_SOURCE == INPUT_ESPNOW || RX_INPUT_SOURCE == INPUT_ANDROID
+#if RX_INPUT_SOURCE == INPUT_NOPS
   WiFiUDP   udpCmd;
   WiFiUDP   udpTelemetry;
   char      udpBuf[192];
@@ -237,20 +238,24 @@ SbusOutput sbus(SBUS_TX_PIN, SBUS_INVERT_SW);
 //  MOTOR (RZ7886)
 // =============================================================================
 void motorSetup() {
-  motorA.setResolution(MOTOR_LEDC_RES);
+  motorA.setResolution(MOTOR_PWM_RES);
   motorA.setFrequency(MOTOR_PWM_FREQ);
 }
 
 void motorDrive(int t) {
   if (battery.isLowVoltage()) { motorA.motorStop(); prevFwd = false; return; }
-  int pwm = map(abs(t), 0, 100, 0, MOTOR_MAX_RATE);
+  if (THROTTLE_RAMP){ 
+    if (t>speed) speed += THROTTLE_RAMP;
+    if (t<speed) speed -= THROTTLE_RAMP;
+    } else speed = t;
+  int pwm = map(abs(speed), -100, 100, -1*MOTOR_MAX_RATE, MOTOR_MAX_RATE);
   if (t > THROTTLE_DEADBAND) {
     motorA.motorGoP(pwm);
-    prevFwd = true;
+    if (pwm>0) prevFwd = true;
   } else if (prevFwd && (abs(t) > THROTTLE_DEADBAND)) { motorA.motorBrake(pwm);
   } else if (abs(t) > THROTTLE_DEADBAND) {
-      prevFwd = false;
-      motorA.motorGoP(-1*pwm);
+      if (pwm<0) prevFwd = false;
+      motorA.motorGoP(pwm);
   } else if (abs(t) <= THROTTLE_DEADBAND) { motorA.motorStop(); prevFwd = false; }
 }
 
@@ -295,7 +300,7 @@ void applyFailsafe() {
 // =============================================================================
 //  UDP TELEMETRİ
 // =============================================================================
-#if RX_INPUT_SOURCE == INPUT_ESPNOW || RX_INPUT_SOURCE == INPUT_ANDROID
+#if RX_INPUT_SOURCE == INPUT_NOPS
 void sendTelemetryUdp() {
   if (!androidKnown) return;
   if (millis() - lastTelemetryMs < TELEMETRY_INTERVAL_MS) return;
@@ -321,7 +326,7 @@ void sendTelemetryUdp() {
 // =============================================================================
 //  ESP-NOW
 // =============================================================================
-#if RX_INPUT_SOURCE == INPUT_ESPNOW
+#if RX_INPUT_SOURCE == INPUT_NOPS
 void sendEspNowAck(const RCPacket& p) {
   TelemetryPacket tp = {};
   tp.ack_seq        = p.seq;
@@ -350,7 +355,7 @@ void onDataRecv(const uint8_t* mac, const uint8_t* data, int len) {
 // =============================================================================
 //  UDP KOMUT PARSE
 // =============================================================================
-#if RX_INPUT_SOURCE == INPUT_ESPNOW || RX_INPUT_SOURCE == INPUT_ANDROID
+#if RX_INPUT_SOURCE == INPUT_NOPS
 void parseUDP(const char* buf, IPAddress senderIp) {
   androidIp    = senderIp;
   androidKnown = true;
@@ -492,8 +497,7 @@ void setup() {
   Serial.println("\n=== RC RECEIVER BASLIYOR ===");
   Serial.printf("[BOARD] %s\n", (BOARD_TYPE == BOARD_ESP32) ? "ESP32" : "ESP8266");
   Serial.printf("[INPUT] %s\n",
-    (RX_INPUT_SOURCE == INPUT_ESPNOW)  ? "ESP-NOW" :
-    (RX_INPUT_SOURCE == INPUT_ANDROID) ? "Android UDP" :
+    (RX_INPUT_SOURCE == INPUT_NOPS)  ? "ESP-NOW & Android UDP" :
     (RX_INPUT_SOURCE == INPUT_PS3)     ? "PS3 (esp32-ps3)" : "PS4 (PS4_Controller_Host)");
 
   // 1. Pil (WiFi/BT öncesi — ADC gürültüsünü önler)
@@ -511,7 +515,7 @@ void setup() {
   gyro.begin();
 
   // ── WiFi + UDP (ESPNOW ve ANDROID modları) ────────────────────────────────
-#if RX_INPUT_SOURCE == INPUT_ESPNOW || RX_INPUT_SOURCE == INPUT_ANDROID
+#if RX_INPUT_SOURCE == INPUT_NOPS
   WiFi.mode(WIFI_AP);
   WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD, WIFI_AP_CHANNEL);
   Serial.printf("[WiFi] AP:%s  IP:%s\n",
@@ -521,7 +525,7 @@ void setup() {
 #endif
 
   // ── ESP-NOW peer kaydı ────────────────────────────────────────────────────
-#if RX_INPUT_SOURCE == INPUT_ESPNOW
+#if RX_INPUT_SOURCE == INPUT_NOPS
   #if BOARD_TYPE == BOARD_ESP8266
     if (esp_now_init() != 0) { Serial.println("[ESP-NOW] HATA"); ESP.restart(); }
     esp_now_set_self_role(ESP_NOW_ROLE_COMBO);
@@ -597,7 +601,7 @@ void setup() {
 void loop() {
 
   // ── UDP Komut ────────────────────────────────────────────────────────────
-#if RX_INPUT_SOURCE == INPUT_ESPNOW || RX_INPUT_SOURCE == INPUT_ANDROID
+#if RX_INPUT_SOURCE == INPUT_NOPS
   {
     int len = udpCmd.parsePacket();
     if (len > 0 && len < (int)sizeof(udpBuf)) {
@@ -627,7 +631,7 @@ void loop() {
   if (battery.isLowVoltage()) { motorA.motorStop(); prevFwd = false; }
 
   // ── UDP Telemetri ─────────────────────────────────────────────────────────
-#if RX_INPUT_SOURCE == INPUT_ESPNOW || RX_INPUT_SOURCE == INPUT_ANDROID
+#if RX_INPUT_SOURCE == INPUT_NOPS
   sendTelemetryUdp();
 #endif
 

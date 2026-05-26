@@ -15,19 +15,14 @@
 #if BOARD_TYPE == BOARD_ESP8266
   #include <ESP8266WiFi.h>
   #include <WiFiUdp.h>
-  #if RX_INPUT_SOURCE == INPUT_ESPNOW
     #include <espnow.h>
-  #endif
 #elif BOARD_TYPE == BOARD_ESP32
   #include <WiFi.h>
   #include <WiFiUdp.h>
-  #if RX_INPUT_SOURCE == INPUT_ESPNOW
     #include <esp_now.h>
-  #endif
 #endif
 
 // ─── ESP-NOW soyutlaması ─────────────────────────────────────────────────────
-#if RX_INPUT_SOURCE == INPUT_ESPNOW
 
   #if BOARD_TYPE == BOARD_ESP8266
     // ESP8266 gönderme
@@ -47,4 +42,3 @@
   // ESP32  : void cb(const uint8_t* mac, const uint8_t* data, int len)
   // Receiver.cpp her iki imzayı da derleyebilecek şekilde yazılmıştır.
 
-#endif // INPUT_ESPNOW
