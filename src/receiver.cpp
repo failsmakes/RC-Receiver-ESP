@@ -154,15 +154,10 @@ private:
 
   void _playStartupBeep(uint8_t n) {
     Serial.printf("[BEEP] %dS → %dx%d darbe\n", n, BEEP_REPEAT_COUNT, n);
-    //motorA.setResolution(MOTOR_PWM_RES);
-    //motorA.setFrequency(BEEP_FREQUENCY);
     motorA.motorStop();
     for (int rep = 0; rep < BEEP_REPEAT_COUNT; rep++) {
       for (uint8_t i = 0; i < n; i++) {
         tone(MOTOR_IN1_PIN,BEEP_FREQUENCY,BEEP_ON_MS);
-        //motorA.motorGo(BEEP_PWM_VALUE);
-     //   delay(BEEP_ON_MS);
-    //    motorA.motorBrake(100);
         if (i < n - 1) delay(BEEP_OFF_MS);
       }
       if (rep < BEEP_REPEAT_COUNT - 1) delay(BEEP_CELL_PAUSE_MS);
