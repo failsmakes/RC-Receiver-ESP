@@ -85,7 +85,7 @@
   #define MOTOR_IN1_PIN    25
   #define MOTOR_IN2_PIN    26
   // Servo
-  #define SERVO_PIN        27
+  #define SERVO_PIN        4
   // SBUS TX
   #define SBUS_TX_PIN      17
   // Gyro I2C
@@ -107,10 +107,10 @@
 #define THROTTLE_DEADBAND   10
 #define STEER_DEADBAND      3
 #define FAILSAFE_MS         500
-#define MOTOR_PWM_FREQ      20000
-#define MOTOR_MAX_RATE      60
+#define MOTOR_PWM_FREQ      10000
+#define MOTOR_MAX_RATE      75
 #define MOTOR_PWM_RES       8    // 8-bit (0-255)
-#define THROTTLE_RAMP       1    // 0 to disable
+#define THROTTLE_RAMP       0    // 0 to disable
 
 // =============================================================================
 //  7. SBUS ÇIKIŞI

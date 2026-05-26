@@ -154,14 +154,15 @@ private:
 
   void _playStartupBeep(uint8_t n) {
     Serial.printf("[BEEP] %dS → %dx%d darbe\n", n, BEEP_REPEAT_COUNT, n);
-    motorA.setResolution(MOTOR_PWM_RES);
-    motorA.setFrequency(BEEP_FREQUENCY);
+    //motorA.setResolution(MOTOR_PWM_RES);
+    //motorA.setFrequency(BEEP_FREQUENCY);
     motorA.motorStop();
     for (int rep = 0; rep < BEEP_REPEAT_COUNT; rep++) {
       for (uint8_t i = 0; i < n; i++) {
-        motorA.motorGo(BEEP_PWM_VALUE);
-        delay(BEEP_ON_MS);
-        motorA.motorBrake(100);
+        tone(MOTOR_IN1_PIN,BEEP_FREQUENCY,BEEP_ON_MS);
+        //motorA.motorGo(BEEP_PWM_VALUE);
+     //   delay(BEEP_ON_MS);
+    //    motorA.motorBrake(100);
         if (i < n - 1) delay(BEEP_OFF_MS);
       }
       if (rep < BEEP_REPEAT_COUNT - 1) delay(BEEP_CELL_PAUSE_MS);
@@ -248,14 +249,14 @@ void motorDrive(int t) {
     if (t>speed) speed += THROTTLE_RAMP;
     if (t<speed) speed -= THROTTLE_RAMP;
     } else speed = t;
-  int pwm = map(abs(speed), -100, 100, -1*MOTOR_MAX_RATE, MOTOR_MAX_RATE);
+  int pwm = map(speed, -100, 100, -1*MOTOR_MAX_RATE, MOTOR_MAX_RATE);
   if (t > THROTTLE_DEADBAND) {
     motorA.motorGoP(pwm);
     if (pwm>0) prevFwd = true;
-  } else if (prevFwd && (abs(t) > THROTTLE_DEADBAND)) { motorA.motorBrake(pwm);
+  } else if (prevFwd && (abs(t) > THROTTLE_DEADBAND)) { motorA.motorBrake(abs(t));
   } else if (abs(t) > THROTTLE_DEADBAND) {
       if (pwm<0) prevFwd = false;
-      motorA.motorGoP(pwm);
+      motorA.motorGoP(0.5*pwm);
   } else if (abs(t) <= THROTTLE_DEADBAND) { motorA.motorStop(); prevFwd = false; }
 }
 
