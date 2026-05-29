@@ -278,10 +278,11 @@ void sbusUpdate(int t, int s) {
 void applyRC(const RCPacket& p) {
   gyro.setGain(p.gyroGain);
   gyro.setDirection(p.gyroDir);
-  int finalSteer = gyro.process(p.steer);
-  motorDrive(p.throttle);
+  int finalThrottle = p.throttle;
+  int finalSteer    = gyro.process(p.steer, p.throttle, finalThrottle);
+  motorDrive(finalThrottle);
   servoUpdate(finalSteer);
-  sbusUpdate(p.throttle, finalSteer);
+  sbusUpdate(finalThrottle, finalSteer);
   lastPktMs = millis();
 }
 
@@ -595,6 +596,9 @@ void setup() {
 //  LOOP
 // =============================================================================
 void loop() {
+
+  // ── Serial komutları işle (gyro parametre ayarı) ─────────────────────────
+  gyro.handleSerial();
 
   // ── UDP Komut ────────────────────────────────────────────────────────────
 #if RX_INPUT_SOURCE == INPUT_NOPS

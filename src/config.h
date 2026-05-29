@@ -147,19 +147,44 @@
 #define BEEP_FREQUENCY       5000
 
 // =============================================================================
-//  10. GYRO (MPU6050)
+//  10. GYRO (MPU6050) — ArduDrift Algoritması
 // =============================================================================
-#define GYRO_I2C_ADDRESS     0x68
-#define GYRO_AXIS            2      // 0=X 1=Y 2=Z(yaw)
-#define GYRO_GAIN_DEFAULT    50
-#define GYRO_DIRECTION_DEFAULT 1
-#define GYRO_LOOP_MS         5
-#define GYRO_LPF_CUTOFF_HZ   15.0f
-#define GYRO_PID_P           8.0f
-#define GYRO_PID_I           0.0f
-#define GYRO_PID_D          -0.4f
-#define GYRO_PID_D_LPF_HZ   10.0f
-#define GYRO_OUTPUT_SCALE    4.0f
+#define GYRO_I2C_ADDRESS      0x68
+
+// I2C pinleri board.h'den geliyor (GYRO_SDA_PIN / GYRO_SCL_PIN)
+
+#define GYRO_GAIN_DEFAULT     50   // kumandadan gain gelmediğinde (0-100)
+#define GYRO_DIRECTION_DEFAULT 1   // +1 veya -1
+
+// ── Döngü ve filtre frekansları ───────────────────────────────────────────────
+#define GYRO_LOOP_HZ           100.0f  // gyro işlem döngüsü (Hz)
+#define GYRO_IMU_FILTER_HZ     30.0f   // gyro/accel LPF kesim (Hz)
+#define GYRO_SERVO_FILTER_HZ   120.0f  // servo çıkış LPF (Hz) — yüksek = hızlı yanıt
+#define GYRO_ANGACC_FILTER_HZ  30.0f   // açısal ivme LPF (Hz)
+
+// ── Ana kazanç ────────────────────────────────────────────────────────────────
+// Toplam düzeltme = counterSteer × defaultGain × K_GAIN × (kumandaGain/100)
+#define GYRO_K_GAIN            0.003f  // hassas ölçek (0.001–0.01)
+#define GYRO_DEFAULT_GAIN      200.0f  // varsayılan kumanda gain karşılığı
+
+// ── Bileşen oranları (ArduDrift parametreleri) ───────────────────────────────
+#define GYRO_ANGVEL_RATE       1.1f    // açısal hız katkısı
+#define GYRO_ANGACC_RATE       1.0f    // açısal ivme katkısı (öngörü)
+#define GYRO_ACC_RATE          0.5f    // yatay ivme düzeltmesi (kayma yönü)
+#define GYRO_ANGLE_RATE        1.0f    // açı integrali katkısı (drift hafızası)
+#define GYRO_ANGLE_LIMIT       90.0f   // açı integrali üst sınırı (°)
+#define GYRO_ANG_HALF_LIFE     0.15f   // açı integrali yarı ömrü (s) — küçük = hızlı sönme
+
+// ── Çıkış şekillendirme ───────────────────────────────────────────────────────
+#define GYRO_OUTPUT_RANGE      0.95f   // normalize çıkış doyum sınırı (0–1)
+#define GYRO_EXP_CURVE        -0.18f   // S-eğrisi üsteli: negatif = merkez duyarlı
+                                       // 0 = doğrusal, +0.5 = kenar duyarlı
+#define GYRO_ANGVEL_ZERO       0.0f    // açısal hız sıfır ofseti (°/s kalibrasyonu)
+
+// ── Throttle etkisi (Serial: "gyro throttle on/off") ─────────────────────────
+// Kayarken throttle hafifçe kesilerek daha uzun, kontrollü drift sağlanır.
+// 0 = etkisiz, 0.5 = %50 düzeltme oranında throttle kısılır
+#define GYRO_THROTTLE_RATE     0.3f    // düzeltme → throttle azaltma oranı
 
 // =============================================================================
 //  11. PS3 / PS4 KONTROLCÜ AYARLARI
